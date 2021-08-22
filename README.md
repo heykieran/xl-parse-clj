@@ -22,7 +22,7 @@ may not work at any particular time, but I find them useful**
 
 Much of the effort of extracting an AST from an individual Excel formula is based on some excellent prior work done by E. W. Bachtal and can be found [here](https://ewbi.blogs.com/develops/). 
 
-The algorithm was converted minimally "functionalized" and converted to Clojure, but I acknowledge
+The algorithm was minimally "functionalized" and converted to Clojure, but I acknowledge
 a debt of gratitude to the original author.
 
 I considered ANTLR and other similar approaches, but rejected them because of the difficulty of dealing with
@@ -94,7 +94,7 @@ returns the AST as a nested structure, below,
 Now that we have a suitable AST, how do we convert it to code? The code uses a variation of
 the shunting-yard alogrithm where the precendences and associations are defined in the vector
 `shunting/OPERATORS-PRECEDENCE` and where the functions themselves are defined in the `functions`
-namespace.
+namespace or taken from `clojure.core`.
 
 For example the `max` function is defined in the `shunting/OPERATORS-PRECEDENCE` vector as follows
 
@@ -144,14 +144,14 @@ yields
 ### Testing the formulas
 
 Included as part of this repository in the `resources` directory is an Excel Workbook **TEST1.xlsx**.
-**Sheet1** of the workbook contains a number of formulas with static input arguments i.e. arguments that
-do **not** refer to other cells or named ranges.
 
-We can use this to verify that the clojure code being generated that, when executed, returns the same
+The sheet **Sheet1** of the workbook contains a number of formulas with static input arguments i.e. arguments that  do **not** refer to other cells or named ranges.
+
+We can use this to verify that the clojure code being generated, when executed, returns the same
 value as Excel.
 
-The `core/run-tests` function does this. It looks at all the formulas in the second column of **Sheet1**,
-converts them to clojure code and evaluates that code. The function returns a vector of maps, one per formula,
+The `core/run-tests` function does this. It inspects all the formulas in the second column of **Sheet1**,
+converts them to clojure code, and evaluates that code. The function returns a vector of maps, one per formula,
 with a key `:ok?` which will be set to true if the value returned by the clojure evaluation
 is equal to the value calculated by Excel.
 
@@ -162,7 +162,7 @@ So, executing
        (filter #(false? (:ok? %))))
 ```
 
-should return an empty sequence if all the tests pass.
+should return an empty sequence, if all the tests pass.
 
 ## Working with Excel Workbooks
 
@@ -177,16 +177,15 @@ With respect to item 1, as you've seen above, the formula
 
 ```"=max(1,2)*$A$4"```
 
-is converted to 
+is converted to to the Clojure form
 
 ```clojure
 (* (max 1.0 2.0) (eval-range "Sheet1!$A$4"))
 ```
 
-so we'll need to parse the workbook and provide an implementation for `eval-range` that's aware of the 
-values in the workbook.
+so, in order tp proceed further, we'll need to both parse the workbook, and provide an implementation for `eval-range` that's aware of the values in the workbook.
 
-We'll treat a workbook as a DAG, where the DAG's edges link cells to dependent cells, also provide a way 
+We'll treat a workbook as a DAG, where the DAG's edges link cells to dependent cells, and also provide a way 
 to resolve named ranges to the cells to which they refer.
 
 The `graph/explain-workbook` provides base-level functionality to parse a workbook, returning a map with
@@ -220,18 +219,18 @@ In that case, its matching entry in the `:cells` vector would be
 You can see that the `:references` value contains the information about each cell on which the formula
 is dependent.
 
-In order to break out a sheet for a workbook you can run
+In order to *"break out"* a sheet for a workbook you can run
 
 ```clojure
 (graph/explain-workbook "TEST1.xlsx" "Sheet2")
 ```
 
-Once we have this information we can begin the process of converting it to a DAG. First, we use
-`graph/get-cell-dependencies` to augment the map returned by `explain-workbook` with a `:dependencies`
-key where its value is a vector of 2-tuples where the first value in the tuple is a cell and the 
+Once we have this information we can begin the process of converting it to a DAG. 
+
+First, we use `graph/get-cell-dependencies` to augment the map returned by `explain-workbook` with a `:dependencies` key where its value is a vector of 2-tuples where the first value in the tuple is a cell and the 
 second value is the cells on which it depends.
 
-We follow this with a call to `graph/add-graph` which uses the `:dependencies` to construct the DAG. The
+We follow this with a call to `graph/add-graph` which uses the `:dependencies` key to construct the DAG. The
 graph is added to the workbook map as a `:map` entry.
 
 If you have graphviz installed you can inspect the DAG produced by the test workbook's second worksheet
@@ -250,13 +249,12 @@ as follows
 
 ![Dependency Graph](/assets/DAG1.png "Dependencies")
 
-It remains to provide an implementation of the `eval-range` function that is returned in the Clojure expression
-for any formula cell that references one, or more, other cells.
+It still remains to provide an implementation of the `eval-range` function that is returned in the Clojure expression for any formula cell that references one, or more, other cells.
 
 The code provides a function `graph/expand-cell-range` which when given a string describing a cell, a range 
 of cells, or a named range in a workbook will expand it to the individual cells referenced.
 
-As an example if we `def` a variable to contain the worksheet map as follows:
+As an example, if we `def` a variable to contain the *worksheet map* as follows:
 
 ```clojure
 (def WB-MAP
@@ -298,13 +296,13 @@ Building on this is the actual `graph/eval-range` function
 (eval-range "Sheet2!C2:C4" WB-MAP)
 ```
 
-returns
+which returns
 
 ```clojure
 [12.0 24.0 36.0]
 ```
 
-which are the values contained in the range
+which is a vector of the values contained in the range
 
 So, finally, the `graph` function will walk the DAG and recalculate, in the correct order, 
 the entire workbook using the clojure code that was generated during initial processing.
@@ -358,7 +356,7 @@ If we want to check that the Clojure results match the results returned by Excel
         (recalc-workbook WB-MAP "Sheet2"))
 ```
 
-and expect to get an empty list `()` returned.
+and expect to get an empty list `'()` returned.
 
 ## Future Work
 
@@ -374,7 +372,7 @@ will return a list of cells, in the correct order, that should be recalculated w
 Sheet2 is updated
 
 ```clojure
-("Sheet2!A2" "Sheet2!B9")
+'("Sheet2!A2" "Sheet2!B9")
 ```
 
 
