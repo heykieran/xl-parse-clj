@@ -15,6 +15,8 @@
    [org.apache.poi.ss.util AreaReference CellReference]
    [org.apache.poi.ss.usermodel CellType DateUtil]))
 
+(declare ^:dynamic *context*)
+
 (defn run-tests []
   (->> (excel/extract-test-formulas "TEST1.xlsx" "Sheet2")
        (reduce
@@ -217,13 +219,14 @@
 (defn substitute-ranges [unsubstituted-form]
   (walk/postwalk
    (fn [form]
-     (if (and (list? form) (= 'eval-range (first form)))
-       (let [e (concat form (list '*context*))]
-         `(~@e) #_`(eval ~e))
+     (if (and (list? form) 
+              (= 'eval-range (first form)))
+       (let [e (concat 
+                (cons (resolve (first form)) (rest form)) 
+                (list `*context*))]
+         `(~@e))
        form))
    unsubstituted-form))
-
-(declare ^:dynamic *context*)
 
 (defn recalc-workbook [{:keys [graph] :as wb-map} sheet-name]
   (reduce (fn [accum node]
@@ -303,11 +306,11 @@
   (get-recalc-node-sequence "Sheet2!A2" WB-MAP)
 
   (def G
-    (->> "TEST1.xlsx"
-         (explain-workbook)
-         (get-cell-dependencies)
-         (add-graph)
-         :graph))
+    (-> "TEST1.xlsx"
+        (explain-workbook "Sheet2")
+        (get-cell-dependencies)
+        (add-graph)
+        :graph))
 
   (uber/pprint G)
   (uber/viz-graph G)
