@@ -119,3 +119,4 @@ clojure.tmLanguage.json
 resources/~*
 resources/._*
 ._*
+.vscode/settings.json

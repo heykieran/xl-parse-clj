@@ -1,7 +1,8 @@
 {:deps {dk.ative/docjure {:mvn/version "1.16.0"}
         org.apache.poi/poi {:mvn/version "4.1.1"}
         org.apache.poi/poi-ooxml {:mvn/version "4.1.1"}
-        ubergraph/ubergraph {:mvn/version "0.8.2"}}
+        ubergraph/ubergraph {:mvn/version "0.8.2"}
+        tick/tick {:mvn/version "0.5.0-RC1"}}
  :paths ["src" "resources"]
  :aliases
  {:reveal-deps-only

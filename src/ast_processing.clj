@@ -49,7 +49,6 @@
   ([fmap]
    (process-form-map-to-pseudo-code fmap nil))
   ([{:keys [type sub-type value] :as fmap} sheet-name]
-   value
    (cond
      (= [:Operand :Number] [type sub-type])
      (Double/parseDouble value)

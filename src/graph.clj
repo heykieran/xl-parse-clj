@@ -291,7 +291,7 @@
 
   (binding [*context* WB-MAP]
     (eval-range "Sheet2!EMPLOYEES" *context*))
-
+  
   (recalc-workbook WB-MAP "Sheet2")
 
   (keep (fn [[cell-label match? cell-formula cell-value cell-code calculated-value :as calc]]

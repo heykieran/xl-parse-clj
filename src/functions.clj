@@ -1,6 +1,7 @@
 (ns functions
   (:require
-   [clojure.string :as str]))
+   [clojure.string :as str]
+   [excel :as excel]))
 
 (defn abs [v]
   (if (neg? v)
@@ -52,7 +53,23 @@
   (/ (apply sum vs)
      (apply fn-count vs)))
 
+(defn fn-now []
+  (excel/excel-now))
+
+(defn fn-days [& [d1 d2]]
+  (- d1 d2))
+
+(defn fn-yearfrac [& [d1 d2 b]]
+  (/ (- d1 d2) 
+     (case b
+       (nil 0.) 365.
+       1. 365.
+       2. 365. 
+       3. 365.
+       4. 365.)))
+
 (comment
   (abs -10)
-  (abs (flatten [-10])))
+  (abs (flatten [-10]))
+  :end)
 
