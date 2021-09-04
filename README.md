@@ -13,7 +13,8 @@ exceptions.
 
 **Use anything here at your own risk.**
 
-At the moment, the only external dependencies, in addition to Clojure itself, are [docjure](https://github.com/mjul/docjure) and [ubergraph](https://github.com/Engelberg/ubergraph), both excellent libraries.
+At the moment, the only external dependencies, in addition to Clojure itself, are [docjure](https://github.com/mjul/docjure), [ubergraph](https://github.com/Engelberg/ubergraph), and 
+[numeric-tower](https://github.com/clojure/math.numeric-tower) all excellent libraries.
 
 **It is a work in progress, so you'll find a lot of `comment` forms scattered about the code. These may or
 may not work at any particular time, but I find them useful**
@@ -183,7 +184,7 @@ is converted to to the Clojure form
 (* (max 1.0 2.0) (eval-range "Sheet1!$A$4"))
 ```
 
-so, in order tp proceed further, we'll need to both parse the workbook, and provide an implementation for `eval-range` that's aware of the values in the workbook.
+so, in order to proceed further, we'll need to both parse the workbook, and provide an implementation for `eval-range` that's aware of the values in the workbook.
 
 We'll treat a workbook as a DAG, where the DAG's edges link cells to dependent cells, and also provide a way 
 to resolve named ranges to the cells to which they refer.

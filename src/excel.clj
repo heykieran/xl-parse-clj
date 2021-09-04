@@ -1,9 +1,10 @@
 (ns excel
   (:require
    [clojure.string :as str]
-   [dk.ative.docjure.spreadsheet :as dk])
+   [dk.ative.docjure.spreadsheet :as dk]
+   [clojure.math.numeric-tower :as math])
   (:import
-   [java.util TimeZone]
+   [java.util Locale TimeZone Calendar Calendar$Builder]
    [java.time LocalDate LocalTime LocalDateTime]
    [java.time.format DateTimeFormatter]
    [org.apache.poi.ss.usermodel CellType DateUtil]))
@@ -63,6 +64,88 @@
 (defn excel-now []
   (-> (LocalDateTime/now)
       (local-date-time->excel-serial-date)))
+
+(defn build-calendar
+  "Create a GregorianCalendar object, initialized to the Excel
+   serial date supplied, and return it. The serial-date is expected 
+   to represent a UTC datetime."
+  [serial-date]
+  (.. (Calendar$Builder.)
+      (setCalendarType "iso8601")
+      (setLocale Locale/US)
+      (setTimeZone (TimeZone/getTimeZone "UTC"))
+      (setInstant (excel/excel-serial-date->local-date-time serial-date))
+      (build)))
+
+(defn extract-date-fields
+  "Given an initialized calendar instance (containing a UTC instant),
+   return a 7-tuple containing the year, month, day, hour, minute, 
+   second and millisecond for that instant. Note: for the month field
+   January=1 and December=12"
+  [calendar-instant]
+  (mapv #(cond->
+          (.get calendar-instant %)
+           (= Calendar/MONTH %)
+           (inc))
+        [Calendar/YEAR Calendar/MONTH Calendar/DAY_OF_MONTH
+         Calendar/HOUR_OF_DAY Calendar/MINUTE Calendar/SECOND
+         Calendar/MILLISECOND]))
+
+(defn date-vecs->nasd-date
+  "Given two vectors containing year, month and day representing a start date and
+   an end date, return a 3-vector containing the NASD modified start and end 
+   dates and the number of NASD days, as calculated by MASD 30/360, between
+   those two dates"
+  [[year-s month-s day-s]
+   [year-e month-e day-e]]
+  (let [leap-year? (fn [y]
+                     (let [d (if (zero? (mod y 100))
+                               400
+                               4)]
+                       (zero? (mod y d))))
+        ld-feb-s (if (leap-year? year-s) 29 28)
+        ld-feb-e (if (leap-year? year-e) 29 28)
+        eff-day-e-i
+        (if
+         (and (= 2 month-s)
+              (= ld-feb-s day-s)
+              (= 2 month-e)
+              (= ld-feb-e day-e))
+          30
+          day-e)
+        eff-day-s
+        (if (or
+             (= 31 day-s)
+             (and (= 2 month-s) (= ld-feb-e day-s)))
+          30
+          day-s)
+        eff-day-e
+        (if (and
+             (= 30 eff-day-s)
+             (= 31 eff-day-e-i))
+          30
+          eff-day-e-i)]
+    [[year-s month-s eff-day-s]
+     [year-e month-e eff-day-e]
+     (+ (* (- year-e year-s) 360)
+        (* (- month-e month-s) 30)
+        (- eff-day-e eff-day-s))]))
+
+(defn nasd-360-diff
+  "Given two dates, in Excel Serial format, return the number of years as a
+   double between those two date,s calculated using the NASD 30/360 methodology."
+  [excel-serial-start excel-serial-end]
+  (->
+   (date-vecs->nasd-date
+    (-> (build-calendar excel-serial-start)
+        (extract-date-fields))
+    (-> (build-calendar excel-serial-end)
+        (extract-date-fields)))
+   (nth 2)
+   (/ 360)
+   (double)
+   (math/abs)))
+
 
 (defn get-cell-type
   "Get the type of a cell as either :unknown :string or :boolean"
