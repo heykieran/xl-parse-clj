@@ -4,7 +4,8 @@
    [excel :as excel]
    [clojure.math.numeric-tower :as math])
   (:import 
-   [java.time LocalDateTime]))
+   [java.time LocalDateTime]
+   [java.util Calendar Calendar$Builder]))
 
 (defn abs [v]
   (if (neg? v)
@@ -60,7 +61,8 @@
   (excel/excel-now))
 
 (defn fn-date [& [year month day]]
-  (let [cal (excel/build-calendar-for-ymd year month day)
+  (let [cal (excel/build-calendar-for-year-and-advance 
+              (if (<= 0 year 1899) (+ 1900 year) year) month day)
         tz-id (-> cal
                   (.getTimeZone)
                   (.toZoneId))]
@@ -71,6 +73,12 @@
      (excel/local-date-time->excel-serial-date))))
 
 (comment
+  (excel/build-calendar-for-year-and-advance 2020 1 15)
+  (excel/build-calendar-for-year-and-advance 2019 14 29)
+  (excel/build-calendar-for-year-and-advance 2020 14 29)
+  (excel/build-calendar-for-year-and-advance 2021 14 29)
+  (excel/build-calendar-for-year-and-advance 2021 14 -1)
+  (excel/build-calendar-for-year-and-advance 2021 -3 -1)
   (fn-date 2020 1 15)
   :end)
 

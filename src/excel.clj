@@ -191,16 +191,20 @@
       (setInstant (excel/excel-serial-date->local-date-time serial-date))
       (build)))
 
-(defn build-calendar-for-ymd
-  "Create a GregorianCalendar object, initialized to the year, month and
-   day supplied, and return it. For month Jan=1, Dec=12"
+(defn build-calendar-for-year-and-advance
+  "Create a GregorianCalendar object, initialized to the first of 
+   the supplied year and then add months and day to it and return it. 
+   For month Jan=1, Dec=12"
   [year month day]
-  (.. (Calendar$Builder.)
-      (setCalendarType "iso8601")
-      (setLocale Locale/US)
-      (setTimeZone (TimeZone/getTimeZone "UTC"))
-      (setDate year (dec month) day)
-      (build)))
+  (let [cal (.. (Calendar$Builder.)
+                (setCalendarType "iso8601")
+                (setLocale Locale/US)
+                (setTimeZone (TimeZone/getTimeZone "UTC"))
+                (set Calendar/YEAR year)
+                (build))]
+    (doto cal
+      (.add Calendar/MONTH (dec month))
+      (.add Calendar/DAY_OF_MONTH (dec day)))))
 
 (defn extract-date-fields
   "Given an initialized calendar instance (containing a UTC instant),
