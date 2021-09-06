@@ -321,8 +321,9 @@
                       (get-days-in-year c-y))])
                 [0.0 0.0]
                 (range y1 (inc y2)))]
-    (/ (- date-2 date-1)
-       (/ total-days year-count))))
+    (math/abs
+     (/ (- date-2 date-1)
+        (/ total-days year-count)))))
 
 (defn get-cell-type
   "Get the type of a cell as either :unknown :string or :boolean"
