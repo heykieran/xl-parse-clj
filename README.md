@@ -120,7 +120,7 @@ of the operators when being processed by the shunting-yard algorithm. Furthermor
 in the definition lets the parser know how many arguments to expect.
 
 > As of this writing all Excel's mathematical and logical operators have been implemented, as well
-  as the following functions `abs`, `sin`, `true`, `false`, `and`, `or`, `max`, `min`, `pi`, `now`, `days`, `datevalue`, `yearfrac`,
+  as the following functions `abs`, `sin`, `true`, `false`, `and`, `or`, `max`, `min`, `pi`, `now`, `date`, `days`, `datevalue`, `yearfrac`,
   `sum`, `average`, `count`, `counta` & `if`. Others will be added as necessary.
 
 

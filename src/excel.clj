@@ -179,7 +179,7 @@
   (-> (LocalDateTime/now)
       (local-date-time->excel-serial-date)))
 
-(defn build-calendar
+(defn build-calendar-for-serial-date
   "Create a GregorianCalendar object, initialized to the Excel
    serial date supplied, and return it. The serial-date is expected 
    to represent a UTC datetime."
@@ -189,6 +189,17 @@
       (setLocale Locale/US)
       (setTimeZone (TimeZone/getTimeZone "UTC"))
       (setInstant (excel/excel-serial-date->local-date-time serial-date))
+      (build)))
+
+(defn build-calendar-for-ymd
+  "Create a GregorianCalendar object, initialized to the year, month and
+   day supplied, and return it. For month Jan=1, Dec=12"
+  [year month day]
+  (.. (Calendar$Builder.)
+      (setCalendarType "iso8601")
+      (setLocale Locale/US)
+      (setTimeZone (TimeZone/getTimeZone "UTC"))
+      (setDate year (dec month) day)
       (build)))
 
 (defn extract-date-fields
@@ -268,9 +279,9 @@
   [excel-serial-start excel-serial-end]
   (->
    (date-vecs->nasd-date
-    (-> (build-calendar excel-serial-start)
+    (-> (build-calendar-for-serial-date excel-serial-start)
         (extract-date-fields))
-    (-> (build-calendar excel-serial-end)
+    (-> (build-calendar-for-serial-date excel-serial-end)
         (extract-date-fields)))
    (nth 2)
    (/ 360)
@@ -283,9 +294,9 @@
   [excel-serial-start excel-serial-end]
   (->
    (date-vecs->euro-date
-    (-> (build-calendar excel-serial-start)
+    (-> (build-calendar-for-serial-date excel-serial-start)
         (extract-date-fields))
-    (-> (build-calendar excel-serial-end)
+    (-> (build-calendar-for-serial-date excel-serial-end)
         (extract-date-fields)))
    (nth 2)
    (/ 360)
@@ -309,10 +320,10 @@
   year"
   [date-1 date-2]
   (let [[y1] (-> (min date-1 date-2)
-                 (excel/build-calendar)
+                 (excel/build-calendar-for-serial-date)
                  (excel/extract-date-fields))
         [y2] (-> (max date-1 date-2)
-                 (excel/build-calendar)
+                 (excel/build-calendar-for-serial-date)
                  (excel/extract-date-fields))
         [year-count total-days]
         (reduce (fn [[c1 c2] c-y]

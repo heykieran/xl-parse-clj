@@ -2,7 +2,9 @@
   (:require
    [clojure.string :as str]
    [excel :as excel]
-   [clojure.math.numeric-tower :as math]))
+   [clojure.math.numeric-tower :as math])
+  (:import 
+   [java.time LocalDateTime]))
 
 (defn abs [v]
   (if (neg? v)
@@ -56,6 +58,21 @@
 
 (defn fn-now []
   (excel/excel-now))
+
+(defn fn-date [& [year month day]]
+  (let [cal (excel/build-calendar-for-ymd year month day)
+        tz-id (-> cal
+                  (.getTimeZone)
+                  (.toZoneId))]
+    (->
+     (LocalDateTime/ofInstant
+      (.toInstant cal)
+      tz-id)
+     (excel/local-date-time->excel-serial-date))))
+
+(comment
+  (fn-date 2020 1 15)
+  :end)
 
 (defn fn-days [& [d1 d2]]
   (- d1 d2))
