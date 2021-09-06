@@ -16,10 +16,14 @@
       (parse/nest-ast))
   :end)
 
+(defn compare-ok? [{:keys [value result] :as r-map}]
+  (if (and (number? result) (number? value))
+    (< -1e-8 (- value result) 1e-8)
+    (= value result)))
+
 (defn validate [r-map]
   (println "Check" (:value r-map) "=" (:result r-map) "for" (:formula r-map))
-  (assoc r-map :ok? (= (:value r-map)
-                       (:result r-map))))
+  (assoc r-map :ok? (compare-ok? r-map)))
 
 (defn convert-result [v]
   (if (number? v)
@@ -178,14 +182,14 @@
       (sh/parse-expression-tokens)
       #_(ast/unroll-for-code-form))
 
-  (-> "=COUNTA(A2:A4)"
+  (-> "=YEARFRAC(\"2001/01/25\",\"2001/09/27\")"
       (parse/parse-to-tokens)
       (parse/nest-ast)
       (parse/wrap-ast)
       (ast/process-tree)
       (sh/parse-expression-tokens)
       (ast/unroll-for-code-form))
-
+  
   (->> (run-tests)
        (filter #(false? (:ok? %))))
 

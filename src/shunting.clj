@@ -39,6 +39,7 @@
    {:name :count :s "counta" :f `fns/fn-counta :c :args :a :all :e [:Function :Start]}
    {:name :now :s "now" :f `fns/fn-now :c :args :a 0 :e [:Function :Start]}
    {:name :days :ext true :s "_xlfn.days" :f `fns/fn-days :c :args :a :all :e [:Function :Start]}
+   {:name :datevalue :s "datevalue" :f `fns/fn-datevalue :c :args :a 1 :e [:Function :Start]}
    {:name :yearfrac :s "yearfrac" :f `fns/fn-yearfrac :c :args :a :all :e [:Function :Start]}
 
    {:name :if :s "if" :f 'if :c :args :a 3 :e [:Function :Start]}])

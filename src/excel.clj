@@ -7,7 +7,121 @@
    [java.util Locale TimeZone Calendar Calendar$Builder]
    [java.time LocalDate LocalTime LocalDateTime]
    [java.time.format DateTimeFormatter]
+   [java.text DateFormatSymbols]
+   [org.apache.poi.util LocaleUtil]
    [org.apache.poi.ss.usermodel CellType DateUtil]))
+
+(def PATTERNS
+  [[:YMD-DASHES {:r #"^(\d{4})-(\w+)-(\d{1,2})( .*)?$", :s "ymd" :m-type :num}]
+   [:DMY-DASHES {:r #"^(\d{1,2})-(\w+)-(\d{4})( .*)?$", :s "dmy" :m-type :num}]
+   [:MD-DASHES {:r #"^(\w+)-(\d{1,2})( .*)?$", :s "md" :m-type :num}]
+   [:MDY-SLASHES {:r #"^(\w+)/(\d{1,2})/(\d{4})( .*)?$", :s "mdy" :m-type :num}]
+   [:YMD-SLASHES {:r #"^(\d{4})/(\w+)/(\d{1,2})( .*)?$", :s "ymd" :m-type :num}]
+   [:MD-SLASHES {:r #"^(\w+)/(\d{1,2})( .*)?$", :s "md" :m-type :num}]])
+
+(defn generate-month-symbol-lookup []
+  (reduce (fn [accum inst-fn]
+            (as-> (DateFormatSymbols/getInstance) $
+              (inst-fn $)
+              (remove #(str/blank? %) $)
+              (map-indexed (fn [idx m-str] [(str/lower-case m-str) (inc idx)]) $)
+              (apply conj accum $)))
+          {}
+          [(memfn getShortMonths) (memfn getMonths)]))
+
+(def month-symbol-lookup
+  (delay (generate-month-symbol-lookup)))
+
+(defn get-symbol-match-string [m-type]
+  (let [f (case m-type
+            :month (memfn getMonths)
+            :short-month (memfn getShortMonths))]
+    (as->
+     (DateFormatSymbols/getInstance) $
+      (f $)
+      (remove #(str/blank? %) $)
+      (str/join "|" $))))
+
+(def LONG-PATTERNS
+  (let [syms-short (get-symbol-match-string :short-month)
+        syms-long (get-symbol-match-string :month)]
+    [[:MDY-LONG {:r (re-pattern (str "(?i)^(" syms-long ")\\s*(\\d{1,2})\\s*,\\s{1,}(\\d{4})(. *)?$"))
+                 :s "mdy" :m-type :string}]
+     [:DMY-LONG {:r (re-pattern (str "(?i)^(\\d{1,2})\\s*(" syms-long ")\\s*(\\d{2,})(. *)?$"))
+                 :s "dmy" :m-type :string}]
+     [:MD-LONG {:r (re-pattern (str "(?i)^(" syms-long ")(?:\\s*|-*)(\\d{1,2})(. *)?$"))
+                :s "md" :m-type :string}]
+     [:MY-LONG {:r (re-pattern (str "(?i)^(" syms-long ")\\s*(\\d{4})(. *)?$"))
+                :s "my" :m-type :string}]
+     [:MDY-SHORT {:r (re-pattern (str "(?i)^(" syms-short ")\\s*(\\d{1,2})\\s*,\\s{1,}(\\d{4})(. *)?$"))
+                  :s "mdy" :m-type :string}]
+     [:DMY-SHORT {:r (re-pattern (str "(?i)^(\\d{1,2})\\s*(" syms-short ")\\s*(\\d{2,})(. *)?$"))
+                  :s "dmy" :m-type :string}]
+     [:MD-SHORT {:r (re-pattern (str "(?i)^(" syms-short ")(?:\\s*|-*)(\\d{1,2})(. *)?$"))
+                 :s "md" :m-type :string}]
+     [:MY-SHORT {:r (re-pattern (str "(?i)^(" syms-short ")\\s*(\\d{4})(. *)?$"))
+                 :s "my" :m-type :string}]]))
+
+(defn parse-excel-string-to-date-info [date-string]
+  (letfn [(cvt-int [v] (if (and v (string? v))
+                         (Integer/parseInt v)
+                         v))]
+    (some
+     (fn [[k {:keys [r s m-type]}]]
+       (when-let [[_ v1 v2 v3] (re-matches r date-string)]
+         (let [vs [v1 v2 v3]
+               o-y (str/index-of s "y")
+               o-m (str/index-of s "m")
+               o-d (str/index-of s "d")
+               y-n (let [current-y (-> (LocaleUtil/getUserTimeZone)
+                                       (.toZoneId)
+                                       (LocalDate/now)
+                                       (.getYear))]
+                     (if (nil? o-y)
+                       current-y
+                       (let [y-part (nth vs o-y)]
+                         (cond
+                           (= 4 (count y-part))
+                           (cvt-int y-part)
+                           (= 2 (count y-part))
+                           (+ (* 100 (quot current-y 100))
+                              (cvt-int y-part))
+                           :else
+                           (throw (IllegalArgumentException.
+                                   (str "Can't convert year string " o-y)))))))
+               m-n (if (= :num m-type)
+                     (cvt-int (nth vs o-m))
+                     (get (deref month-symbol-lookup)
+                          (str/lower-case (nth vs o-m))))
+               d-n (if o-d
+                     (cvt-int (nth vs o-d))
+                     1)]
+           {:pattern-name k
+            :pattern-style s
+            :date (LocalDate/of y-n m-n d-n)})))
+     (concat LONG-PATTERNS PATTERNS))))
+
+(defn parse-excel-string-to-serial-date [date-str]
+  (if-let [{:keys [pattern-name pattern-style date]}
+           (excel/parse-excel-string-to-date-info date-str)]
+    (excel/local-date-time->excel-serial-date date)
+    "#VALUE!"))
+
+(comment
+  (ns-unmap *ns* 'month-symbol-lookup)
+  @month-symbol-lookup
+  (parse-excel-string-to-date-info "1/15/2021")
+  (parse-excel-string-to-date-info "2021/1/15")
+  (parse-excel-string-to-date-info "January 15, 2021")
+  (parse-excel-string-to-date-info "Jan 2021")
+  (parse-excel-string-to-date-info "1/15")
+  (parse-excel-string-to-date-info "Jan 15")
+  (parse-excel-string-to-date-info "Jan-15")
+  (parse-excel-string-to-date-info "Jan 15, 2021")
+  (parse-excel-string-to-date-info "january 15, 2021")
+  (parse-excel-string-to-date-info "Jan2021")
+  (parse-excel-string-to-date-info "15 Jan 21")
+  :end)
 
 (defn excel-serial-date->local-date-time-manual
   "Convert an Excel serial date to a local date time instance"
@@ -94,7 +208,7 @@
 (defn date-vecs->nasd-date
   "Given two vectors containing year, month and day representing a start date and
    an end date, return a 3-vector containing the NASD modified start and end 
-   dates and the number of NASD days, as calculated by MASD 30/360, between
+   dates and the number of NASD days, as calculated by NASD 30/360, between
    those two dates"
   [[year-s month-s day-s]
    [year-e month-e day-e]]
@@ -131,6 +245,23 @@
         (* (- month-e month-s) 30)
         (- eff-day-e eff-day-s))]))
 
+(defn date-vecs->euro-date
+  "Given two vectors containing year, month and day representing a start date and
+   an end date, return a 3-vector containing the Euro360 modified start and end 
+   dates and the number of Euro days, as calculated by Euro 30/360, between
+   those two dates"
+  [[year-s month-s day-s]
+   [year-e month-e day-e]]
+  (let [eff-day-s
+        (if (= 31 day-s) 30 day-s)
+        eff-day-e
+        (if (= 31 day-e) 30 day-e)]
+    [[year-s month-s eff-day-s]
+     [year-e month-e eff-day-e]
+     (+ (* (- year-e year-s) 360)
+        (* (- month-e month-s) 30)
+        (- eff-day-e eff-day-s))]))
+
 (defn nasd-360-diff
   "Given two dates, in Excel Serial format, return the number of years as a
    double between those two date,s calculated using the NASD 30/360 methodology."
@@ -146,6 +277,52 @@
    (double)
    (math/abs)))
 
+(defn euro-360-diff
+  "Given two dates, in Excel Serial format, return the number of years as a
+   double between those two date,s calculated using the Euro 30/360 methodology."
+  [excel-serial-start excel-serial-end]
+  (->
+   (date-vecs->euro-date
+    (-> (build-calendar excel-serial-start)
+        (extract-date-fields))
+    (-> (build-calendar excel-serial-end)
+        (extract-date-fields)))
+   (nth 2)
+   (/ 360)
+   (double)
+   (math/abs)))
+
+(defn get-days-in-year
+  "Given a year return the number of days in the year"
+  [y]
+  (if (= 0 (mod y 4))
+    (if (= 0 (mod y 100))
+      (if (= 0 (mod y 400))
+        366.0
+        365.0)
+      366.0)
+    365.0))
+
+(defn act-act-diff
+  "Calculate the fractional years between two excel serial dates using the actual
+  number of days between them and using a denominator of the actual days in each 
+  year"
+  [date-1 date-2]
+  (let [[y1] (-> (min date-1 date-2)
+                 (excel/build-calendar)
+                 (excel/extract-date-fields))
+        [y2] (-> (max date-1 date-2)
+                 (excel/build-calendar)
+                 (excel/extract-date-fields))
+        [year-count total-days]
+        (reduce (fn [[c1 c2] c-y]
+                  [(inc c1)
+                   (+ c2
+                      (get-days-in-year c-y))])
+                [0.0 0.0]
+                (range y1 (inc y2)))]
+    (/ (- date-2 date-1)
+       (/ total-days year-count))))
 
 (defn get-cell-type
   "Get the type of a cell as either :unknown :string or :boolean"
@@ -156,6 +333,7 @@
       (= CellType/NUMERIC (.getCachedFormulaResultType c)) :numeric
       (= CellType/STRING (.getCachedFormulaResultType c)) :string
       (= CellType/BOOLEAN (.getCachedFormulaResultType c)) :boolean
+      (= CellType/ERROR (.getCachedFormulaResultType c)) :error
       :else :unknown)
     (= CellType/NUMERIC (.getCellType c)) :numeric
     (= CellType/STRING (.getCellType c)) :string

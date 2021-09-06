@@ -1,7 +1,8 @@
 (ns functions
   (:require
    [clojure.string :as str]
-   [excel :as excel]))
+   [excel :as excel]
+   [clojure.math.numeric-tower :as math]))
 
 (defn abs [v]
   (if (neg? v)
@@ -59,13 +60,22 @@
 (defn fn-days [& [d1 d2]]
   (- d1 d2))
 
-(defn fn-yearfrac [& [d1 d2 b]]
-  (case b
-    (nil 0.) (excel/nasd-360-diff d1 d2)
-    1. (/ (- d1 d2) 365.)
-    2. (/ (- d1 d2) 365.)
-    3. (/ (- d1 d2) 365.)
-    4. (/ (- d1 d2) 365.)))
+(defn fn-datevalue [v]
+  (excel/parse-excel-string-to-serial-date v))
+
+(defn fn-yearfrac [& [date-1 date-2 b]]
+  (let [d1 (if (number? date-1)
+             date-1
+             (excel/parse-excel-string-to-serial-date date-1))
+        d2 (if (number? date-2)
+             date-2
+             (excel/parse-excel-string-to-serial-date date-2))]
+    (case b
+      (nil 0.) (excel/nasd-360-diff d1 d2)
+      1. (excel/act-act-diff d1 d2)
+      2. (math/abs (/ (- d1 d2) 360.))
+      3. (math/abs (/ (- d1 d2) 365.))
+      4. (excel/euro-360-diff d1 d2))))
 
 (comment
   (abs -10)
