@@ -40,6 +40,23 @@
                       (core/validate)))))
         [])))
 
+(defn range-metadata [cell-range-str]
+  (let [aref (AreaReference. cell-range-str SpreadsheetVersion/EXCEL2007)
+        f-cell (.getFirstCell aref)
+        l-cell (.getLastCell aref)
+        f-row (.getRow f-cell)
+        f-col (.getCol f-cell)
+        l-row (.getRow l-cell)
+        l-col (.getCol l-cell)
+        [cell-sheet-name cell-row-name cell-col-name] (.getCellRefParts f-cell)]
+    {:single? (.isSingleCell aref)
+     :column? (.isWholeColumnReference aref)
+     :sheet-name cell-sheet-name
+     :tl-name (str cell-col-name cell-row-name)
+     :tl-coord [f-row f-col]
+     :cols (inc (apply - (sort > [l-col f-col])))
+     :rows (inc (apply - (sort > [l-row f-row])))}))
+
 (defn get-named-range-description-map [named-ranges cell-name]
   (when (and named-ranges (-> cell-name (AreaReference. SpreadsheetVersion/EXCEL2007) (.isSingleCell)))
     (some (fn [{:keys [name sheet] :as named-range}]
@@ -51,16 +68,17 @@
   ([cell-range-str]
    (expand-cell-range cell-range-str nil))
   ([cell-range-str named-ranges]
-   (if-let [named-range (get-named-range-description-map named-ranges cell-range-str)]
-     (:references named-range)
-     (let [aref (AreaReference. cell-range-str SpreadsheetVersion/EXCEL2007)]
-       (mapv (fn [ref-cell]
-               (let [[sheet-name row-name col-name]
-                     (.getCellRefParts ref-cell)]
-                 {:sheet sheet-name
-                  :label (str col-name row-name)
-                  :type :general}))
-             (.getAllReferencedCells aref))))))
+   (letfn [(cell-info [ref-cell]
+             (let [[sheet-name row-name col-name]
+                   (.getCellRefParts ref-cell)]
+               {:sheet sheet-name
+                :label (str col-name row-name)
+                :type :general}))]
+     (if-let [named-range (get-named-range-description-map named-ranges cell-range-str)]
+       (:references named-range)
+       (let [aref (AreaReference. cell-range-str SpreadsheetVersion/EXCEL2007)]
+         (-> (mapv cell-info (.getAllReferencedCells aref))
+             (with-meta (graph/range-metadata cell-range-str))))))))
 
 (defn explain-sheet-cells [sheet-name cells]
   (reduce
@@ -202,19 +220,25 @@
            [])))
 
 (defn eval-range [range-str {:keys [named-ranges] :as wb-map}]
-  (->> (expand-cell-range range-str named-ranges)
-       (mapv (fn [{cell-sheet :sheet cell-label :label}]
-               (->> wb-map
-                    (get-cell-from-wb-map cell-sheet cell-label)
-                    (:value))))
-       ((fn [interim-result]
-          (cond (or (nil? interim-result)
-                    (empty? interim-result))
-                nil
-                (= 1 (count interim-result))
-                (first interim-result)
-                :else
-                interim-result)))))
+  (let [expanded-range (expand-cell-range range-str named-ranges)
+        range-metadata (meta expanded-range)]
+    (->> expanded-range
+         (mapv (fn [{cell-sheet :sheet cell-label :label}]
+                 (->> wb-map
+                      (get-cell-from-wb-map cell-sheet cell-label)
+                      (:value))))
+         ((fn [interim-result]
+            (cond (or (nil? interim-result)
+                      (empty? interim-result))
+                  nil
+                  (= 1 (count interim-result))
+                  (first interim-result)
+                  :else
+                  interim-result)))
+         ((fn[interim-result]
+            (if (instance? clojure.lang.IObj interim-result)
+              (with-meta interim-result range-metadata)
+              interim-result))))))
 
 (defn substitute-ranges [unsubstituted-form]
   (walk/postwalk

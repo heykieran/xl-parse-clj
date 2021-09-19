@@ -102,6 +102,28 @@
       3. (math/abs (/ (- d1 d2) 365.))
       4. (excel/euro-360-diff d1 d2))))
 
+(defn- convert-vector-to-table [array-as-vector]
+  (if-let [meta-data (meta array-as-vector)]
+    (let [{:keys [single? column? cols rows]} meta-data]
+      (partition cols array-as-vector))
+    array-as-vector))
+
+(defn fn-vlookup [& [lookup-value table-array-as-vector col-index range-lookup]]
+  (let [table-array (convert-vector-to-table table-array-as-vector)
+        r-val (some
+               (fn [[s-val :as table-row]]
+                 (when (= lookup-value s-val)
+                   (nth table-row (dec col-index))))
+               table-array)]
+    (tap> {:loc fn-vlookup
+           :lookup lookup-value
+           :table-vector table-array-as-vector
+           :col-index col-index
+           :range-lookup range-lookup
+           :table-array (convert-vector-to-table table-array-as-vector)
+           :return r-val})
+    r-val))
+
 (comment
   (abs -10)
   (abs (flatten [-10]))

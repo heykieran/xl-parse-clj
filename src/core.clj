@@ -5,7 +5,7 @@
    [ast-processing :as ast]
    [clojure.walk :as walk]
    [excel :as excel]
-   [functions]))
+   [functions :as functions]))
 
 (comment
   (-> "=(1+2+3)*(10+20+30)/(40+50+60)"

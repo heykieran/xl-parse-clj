@@ -122,6 +122,8 @@ in the definition lets the parser know how many arguments to expect.
 > As of this writing all Excel's mathematical and logical operators have been implemented, as well
   as the following functions `abs`, `sin`, `true`, `false`, `and`, `or`, `max`, `min`, `pi`, `now`, `date`, `days`, `datevalue`, `yearfrac`,
   `sum`, `average`, `count`, `counta` & `if`. Others will be added as necessary.
+  
+> An preliminary implementation of `vlookup` is also included. This will be extended.
 
 
 As an example 
@@ -303,7 +305,42 @@ which returns
 [12.0 24.0 36.0]
 ```
 
-which is a vector of the values contained in the range
+which is a vector of the values contained in the range. 
+
+Notice that _even_ for ranges that 
+describe a rectangular region (rather than a single row or a single column) `eval-range` 
+returns a vector.
+
+However, `eval-range` also attaches meta-data to the vector returned, so that the _shape_
+of the range can be recovered and used by functions that expect tabular data. For example
+
+```clojure
+(eval-range "Sheet2!$L$4:$N$6" WB-MAP)
+```
+
+returns
+
+```clojure
+["L1" 0.1 0.0 "L2" 0.2 30.0 "L3" 0.3 35.0]
+```
+
+and
+
+```clojure
+(meta (eval-range "Sheet2!$L$4:$N$6" WB-MAP))
+```
+
+returns
+
+```clojure
+{:single? false, :column? false, :sheet-name "Sheet2", 
+ :tl-name "L4", :tl-coord [3 11], :cols 3, :rows 3}
+```
+
+which describes how the vector can be converted to a table.
+
+> The function `expand-cell-range` adds the meta-data that is recapitulated by
+  `eval-range`
 
 So, finally, the `graph` function will walk the DAG and recalculate, in the correct order, 
 the entire workbook using the clojure code that was generated during initial processing.

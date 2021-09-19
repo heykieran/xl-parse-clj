@@ -101,6 +101,12 @@
             :date (LocalDate/of y-n m-n d-n)})))
      (concat LONG-PATTERNS PATTERNS))))
 
+(defn local-date-time->excel-serial-date
+  "Convert a local date time to an Excel serial date"
+  [ldt]
+  (DateUtil/getExcelDate
+   ldt))
+
 (defn parse-excel-string-to-serial-date [date-str]
   (if-let [{:keys [pattern-name pattern-style date]}
            (excel/parse-excel-string-to-date-info date-str)]
@@ -149,12 +155,6 @@
   ([ld-str dt-formatter]
    (LocalDateTime/parse
     ld-str dt-formatter)))
-
-(defn local-date-time->excel-serial-date
-  "Convert a local date time to an Excel serial date"
-  [ldt]
-  (DateUtil/getExcelDate
-   ldt))
 
 (defn excel-date-fmt->fmt
   "Convert Excel format strings to ones understood by DateFormatter"
