@@ -14,7 +14,7 @@ exceptions.
 **Use anything here at your own risk.**
 
 At the moment, the only external dependencies, in addition to Clojure itself, are [docjure](https://github.com/mjul/docjure), [ubergraph](https://github.com/Engelberg/ubergraph), and 
-[numeric-tower](https://github.com/clojure/math.numeric-tower) all excellent libraries.
+[numeric-tower](https://github.com/clojure/math.numeric-tower), all excellent libraries.
 
 **It is a work in progress, so you'll find a lot of `comment` forms scattered about the code. These may or
 may not work at any particular time, but I find them useful**
@@ -115,7 +115,7 @@ The `average` function is defined as follows
 which maps the excel formula symbol `"average"` to the clojure `fns/average` symbol that is 
 defined in the `functions` namespace and aliased to `fns`.
 
-The order of the definitions in the `OPERATORS-PRECEDENCE` vector also determines the precendece
+The order of the definitions in the `OPERATORS-PRECEDENCE` vector also determines the precedence
 of the operators when being processed by the shunting-yard algorithm. Furthermore, the `:a` field
 in the definition lets the parser know how many arguments to expect.
 
@@ -123,7 +123,7 @@ in the definition lets the parser know how many arguments to expect.
   as the following functions `abs`, `sin`, `true`, `false`, `and`, `or`, `max`, `min`, `pi`, `now`, `date`, `days`, `datevalue`, `yearfrac`,
   `sum`, `average`, `count`, `counta` & `if`. Others will be added as necessary.
   
-> An preliminary implementation of `vlookup` is also included. This will be extended.
+> A preliminary implementation of `vlookup` is also included. This will be extended.
 
 
 As an example 

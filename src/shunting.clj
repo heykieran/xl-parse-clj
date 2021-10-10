@@ -43,6 +43,7 @@
    {:name :datevalue :s "datevalue" :f `fns/fn-datevalue :c :args :a 1 :e [:Function :Start]}
    {:name :yearfrac :s "yearfrac" :f `fns/fn-yearfrac :c :args :a :all :e [:Function :Start]}
    {:name :vlookup :s "vlookup" :f `fns/fn-vlookup :c :args :a :all :e [:Function :Start]}
+   {:name :sumif :s "sumif" :f `fns/fn-sumif :c :args :a :all :e [:Function :Start]}
 
    {:name :if :s "if" :f 'if :c :args :a 3 :e [:Function :Start]}])
 
@@ -85,8 +86,12 @@
 
 (defn is-operator? [test-var]
   (when (map? test-var)
-    (let [{:keys [type sub-type value]} test-var]
-      (some #(=ci (:s %) value) OPERATORS-PRECEDENCE))))
+    (let [{:keys [type sub-type value]} test-var
+          is-operator-result (some #(=ci (:s %) value) OPERATORS-PRECEDENCE)]
+      (when (and (contains? #{:Function :OperatorInfix :OperatorPostfix :OperatorPrefix} type)
+                 (not is-operator-result))
+        (throw (IllegalArgumentException. (str "Unknown operator encountered \"" value "\""))))
+      is-operator-result)))
 
 (defn get-higher-precendence [{type-1 :type sub-type-1 :sub-type value-1 :value :as o1}
                               {type-2 :type sub-type-2 :sub-type value-2 :value :as o2}]

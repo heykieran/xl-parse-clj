@@ -398,6 +398,28 @@
                           :calc-date-value (excel-serial-date->local-date-time cell-value)})))))))
         [])))
 
+(defn extract-all-formulas-from-sheet
+  [sheet]
+  (let [sheet-name (.getSheetName sheet)]
+    (->>
+     (dk/cell-seq sheet)
+     (filter #(and (some? %) (= CellType/FORMULA (.getCellType %))))
+     (mapv (fn [c] {:sheet-name sheet-name
+                    :formula (.getCellFormula c)
+                    :reference (.getReference c)})))))
+
+(defn extact-all-formulas-from-workbook
+  [wb-name]
+  (->> (dk/load-workbook-from-resource wb-name)
+       (dk/sheet-seq)
+       (reduce (fn [accum sheet]
+                 (let [sheet-name (.getSheetName sheet)] 
+                   (assoc accum
+                          sheet-name
+                          (extract-all-formulas-from-sheet sheet))))
+               {})))
+
 (comment
   (extract-test-formulas "TEST1.xlsx" "Sheet1")
+  (extact-all-formulas-from-workbook "TEST1.xlsx")
   :end)
