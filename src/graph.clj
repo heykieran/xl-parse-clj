@@ -126,6 +126,7 @@
                                   (expand-cell-range (str sheet-name "!" value) named-ranges))))
                         (mapcat (fn [expanded-ranges]
                                   expanded-ranges))
+                        (distinct)
                         (into [])))
             cell))
         cells))
@@ -279,22 +280,27 @@
 
   {:vlaaad.reveal/command '(clear-output)}
 
-  (explain-workbook "TEST1.xlsx" "Sheet2")
+  (explain-workbook "TEST-cyclic.xlsx" "Sheet3")
 
-  (-> "TEST1.xlsx"
-       (explain-workbook "Sheet2")
-       (get-cell-dependencies))
+  (-> "TEST-cyclic.xlsx"
+      (explain-workbook "Sheet3")
+      (get-cell-dependencies))
 
-  (-> "TEST1.xlsx"
-       (explain-workbook)
-       (get-cell-dependencies)
-       (add-graph))
+  (-> "TEST-cyclic.xlsx"
+      (explain-workbook "Sheet3")
+      (get-cell-dependencies)
+      (add-graph))
 
   (def WB-MAP
-    (-> "TEST1.xlsx"
-        (explain-workbook "Sheet2")
+    (-> "TEST-cyclic.xlsx"
+        (explain-workbook "Sheet3")
         (get-cell-dependencies)
         (add-graph)))
+
+  (uber/pprint (:graph WB-MAP))
+  (uber/viz-graph (:graph WB-MAP))
+  (uber/node-with-attrs (:graph WB-MAP) "Sheet3!B3")
+
 
   (expand-cell-range "Sheet2!B3:D3" (:named-ranges WB-MAP))
   (expand-cell-range "Sheet2!BONUS" (:named-ranges WB-MAP))
@@ -302,10 +308,12 @@
 
   (eval-range "Sheet2!C2:C4" WB-MAP)
   (eval-range "Sheet2!ALLOWEDTOTAL" WB-MAP)
+  (eval-range "Sheet2!J4:J6" WB-MAP)
+
 
   (binding [*context* WB-MAP]
     (-> (substitute-ranges
-         '(if (< (eval-range "Sheet2!E5") (eval-range "Sheet2!ALLOWEDTOTAL")) (str "YES") (str "NO")))
+         '(if (< (eval-range "Sheet2!G5") (eval-range "Sheet2!ALLOWEDTOTAL")) (str "YES") (str "NO")))
         (eval)))
 
   (binding [*context* WB-MAP]
@@ -315,17 +323,17 @@
 
   (binding [*context* WB-MAP]
     (eval-range "Sheet2!EMPLOYEES" *context*))
+
+  (alg/topsort (:graph WB-MAP))
   
-  (recalc-workbook WB-MAP "Sheet2")
+  (recalc-workbook WB-MAP "Sheet3")
 
   (keep (fn [[cell-label match? cell-formula cell-value cell-code calculated-value :as calc]]
           (when-not match?
             calc))
         (recalc-workbook WB-MAP "Sheet2"))
 
-  (if (< (eval-range "Sheet2!E5") (eval-range "Sheet2!ALLOWEDTOTAL")) (str "YES") (str "NO"))
-
-  (uber/node-with-attrs (:graph WB-MAP) "Sheet2!C4")
+  (uber/node-with-attrs (:graph WB-MAP) "Sheet3!B3")
 
   (get-recalc-node-sequence "Sheet2!A2" WB-MAP)
 
@@ -347,7 +355,7 @@
       :graph
       (uber/viz-graph))
 
-  (reduce (fn[accum node]
+  (reduce (fn [accum node]
             (conj
              accum
              (let [[node {:keys [formula value] :as attrs}] (uber/node-with-attrs G node)]
@@ -373,12 +381,12 @@
    {:start-node "Sheet2!B3"}
    (alg/shortest-path G)
    :depths
-   (reduce (fn[accum [cell-name depth]]
+   (reduce (fn [accum [cell-name depth]]
              (update accum depth
                      (fnil conj [])
                      cell-name))
            (sorted-map))
-   (reduce (fn[accum [depth cell-name]]
+   (reduce (fn [accum [depth cell-name]]
              (concat accum cell-name))
            []))
 

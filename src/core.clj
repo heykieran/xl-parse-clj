@@ -3,7 +3,6 @@
    [xlparse :as parse]
    [shunting :as sh]
    [ast-processing :as ast]
-   [clojure.walk :as walk]
    [excel :as excel]
    [functions :as functions]))
 
@@ -190,15 +189,64 @@
       (sh/parse-expression-tokens)
       (ast/unroll-for-code-form))
   
+  (-> "=SUMIF(J4:J6,\">200\")"
+      (parse/parse-to-tokens)
+      (parse/nest-ast)
+      (parse/wrap-ast)
+      (ast/process-tree)
+      (sh/parse-expression-tokens)
+      (ast/unroll-for-code-form))
+  
+  (-> "=SUMIF(J4:J6,E1)"
+      (parse/parse-to-tokens)
+      (parse/nest-ast)
+      (parse/wrap-ast)
+      (ast/process-tree)
+      (sh/parse-expression-tokens)
+      (ast/unroll-for-code-form))
+  
+  (-> "=IF(X>200,1,0)"
+      (parse/parse-to-tokens)
+      (parse/nest-ast)
+      (parse/wrap-ast)
+      (ast/process-tree)
+      (sh/parse-expression-tokens)
+      (ast/unroll-for-code-form))
+  
   (->> (run-tests)
        (filter #(false? (:ok? %))))
 
   (run-tests)
 
-  (boolean 1.0)
-  (not (boolean 0))
-  (functions/fn-not (if (not= 1.0 1.0) 1.0 0.0))
-  (some #(true? (boolean %)) '(1.0 2.0 3.0))
+  :end)
 
+(comment
+
+  (functions/fn-sumif [118.0 229.0 340.0] (str ">200"))
+  (functions/fn-sumif (graph/eval-range "Sheet2!J4:J6" WB-MAP) 
+                      (graph/eval-range "Sheet2!E4" WB-MAP))
+  
+  (graph/eval-range "Sheet2!G4" WB-MAP)
+
+  (filter #(> % 200) [118.0 229.0 340.0])
+
+  (require '[clojure.tools.analyzer.jvm :as ana.jvm])
+  (require '[clojure.tools.analyzer.passes.jvm.emit-form :as e])
+  (require '[graph :as graph])
+
+  (ana.jvm/analyze '(> 200.0))
+  (ana.jvm/analyze '(graph/eval-range "E1"))
+
+  (ana.jvm/analyze '(> 200.0) {})
+  (e/emit-form (ana.jvm/analyze '(> 200.0)))
+
+  (-> "=IF(X>200,1,0)" #_"=$CURRENT>200"
+      (parse/parse-to-tokens)
+      (parse/nest-ast)
+      (parse/wrap-ast)
+      (ast/process-tree)
+      (sh/parse-expression-tokens)
+      (ast/unroll-for-code-form))
+  
   :end)
 

@@ -16,7 +16,7 @@
    {:name :binary-exp :s "^" :f '** :c :infix :a 2 :e [:OperatorInfix :Math]}
    {:name :binary-concat :s "&" :f 'str :c :infix :a 2 :e [:OperatorInfix :Concatenation]} ; what should this do? There are coercions to text in Excel
 
-   {:name :compare-eq :s "=" :f '= :c :infix :a 2 :e [:OperatorInfix :Logical]}
+   {:name :compare-eq :s "=" :f `fns/fn-equal :c :infix :a 2 :e [:OperatorInfix :Logical]}
    {:name :compare-gt :s ">" :f '> :c :infix :a 2 :e [:OperatorInfix :Logical]}
    {:name :compare-lt :s "<" :f '< :c :infix :a 2 :e [:OperatorInfix :Logical]}
    {:name :compare-gte :s ">=" :f '>= :c :infix :a 2 :e [:OperatorInfix :Logical]}
@@ -87,7 +87,10 @@
 (defn is-operator? [test-var]
   (when (map? test-var)
     (let [{:keys [type sub-type value]} test-var
-          is-operator-result (some #(=ci (:s %) value) OPERATORS-PRECEDENCE)]
+          is-operator-result (some #(and
+                                     (not (= :Operand type))
+                                     (=ci (:s %) value))
+                                   OPERATORS-PRECEDENCE)]
       (when (and (contains? #{:Function :OperatorInfix :OperatorPostfix :OperatorPrefix} type)
                  (not is-operator-result))
         (throw (IllegalArgumentException. (str "Unknown operator encountered \"" value "\""))))
@@ -251,6 +254,12 @@
                                    {:sub-type :Number
                                     :type :Operand
                                     :value "2"}])
+  
+  (parse-simple-expression-tokens [{:sub-type :Text, :type :Operand, :value ">"} 
+                                   {:sub-type :Concatenation, :type :OperatorInfix, :value "&"} 
+                                   {:sub-type :Range, :type :Operand, :value "A1"}])
+  
+  (is-operator? {:sub-type :Text, :type :Operand, :value ">"})
 
   (parse-expression-tokens [{:value "max"
                              :type :Function
