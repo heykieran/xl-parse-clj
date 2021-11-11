@@ -6,39 +6,13 @@
             [excel :as excel]
             [ast-processing :as ast]
             [shunting :as sh]
-            [core :as core]
             [clojure.walk :as walk])
   (:import
-   [java.time LocalDate LocalTime LocalDateTime]
-   [java.time.format DateTimeFormatter]
    [org.apache.poi.ss SpreadsheetVersion]
-   [org.apache.poi.ss.util AreaReference CellReference]
+   [org.apache.poi.ss.util AreaReference]
    [org.apache.poi.ss.usermodel CellType DateUtil]))
 
 (declare ^:dynamic *context*)
-
-(defn run-tests []
-  (->> (excel/extract-test-formulas "TEST1.xlsx" "Sheet2")
-       (reduce
-        (fn [accum {:keys [type formula format address row column value
-                           :calc-date-value :excel-date-value] :as fcell-info}]
-          (conj accum
-                (let [clj-exp (-> (str "=" formula)
-                                  (parse/parse-to-tokens)
-                                  (parse/nest-ast)
-                                  (parse/wrap-ast)
-                                  (ast/process-tree)
-                                  (sh/parse-expression-tokens)
-                                  (ast/unroll-for-code-form))]
-                  (-> fcell-info
-                      (assoc
-                       :clj
-                       clj-exp
-                       :result
-                       (-> (eval clj-exp)
-                           (core/convert-result)))
-                      (core/validate)))))
-        [])))
 
 (defn range-metadata [cell-range-str]
   (let [aref (AreaReference. cell-range-str SpreadsheetVersion/EXCEL2007)
@@ -187,21 +161,47 @@
             (dissoc cell :references)))
         cells))
 
-(defn add-graph [{:keys [dependencies] :as wb-map-with-dependencies}]
-  (assoc wb-map-with-dependencies
-         :graph
-         (reduce (fn [accum [{cell-sheet :sheet cell-label :label :as cell}
-                             {depends-sheet :sheet depends-label :label :as depends-on-cell}]]
-                   (let [node-1 (str cell-sheet "!" cell-label)
-                         node-2 (str depends-sheet "!" depends-label)
-                         node-1-map (get-cell-from-wb-map cell-sheet cell-label wb-map-with-dependencies)
-                         node-2-map (get-cell-from-wb-map depends-sheet depends-label wb-map-with-dependencies)]
-                     (-> accum
-                         (uber/add-nodes-with-attrs [node-1 node-1-map])
-                         (uber/add-nodes-with-attrs [node-2 node-2-map])
-                         (uber/add-edges [node-2 node-1]))))
-                 (uber/digraph)
-                 dependencies)))
+(defn add-self-dependencies
+  "Add cells with formulas, but with no dependencies to the
+   map as self-dependents"
+  [wb-map-with-dependencies]
+  (let [dependent-cells (:dependencies wb-map-with-dependencies)
+        independent-cells (->> (:cells wb-map-with-dependencies)
+                               (keep #(when
+                                       (and (empty? (:references %))
+                                            (some? (:formula %)))
+                                        %)))]
+    (reduce
+     (fn [accum independent-cell]
+       ;; strictly speaking this should never be true
+       (if (some #(= % independent-cell) accum)
+         accum
+         ;; add the cell to the map as having a formula and
+         ;; depending on itself, so that we can force a recalc
+         (conj accum [independent-cell independent-cell])))
+     dependent-cells
+     independent-cells)))
+
+(defn add-graph
+  ([wb-map-with-dependencies]
+   (add-graph wb-map-with-dependencies false))
+  ([{:keys [dependencies] :as wb-map-with-dependencies} include-all-formula-cells?]
+   (assoc wb-map-with-dependencies
+          :graph
+          (reduce (fn [accum [{cell-sheet :sheet cell-label :label :as cell}
+                              {depends-sheet :sheet depends-label :label :as depends-on-cell}]]
+                    (let [node-1 (str cell-sheet "!" cell-label)
+                          node-2 (str depends-sheet "!" depends-label)
+                          node-1-map (get-cell-from-wb-map cell-sheet cell-label wb-map-with-dependencies)
+                          node-2-map (get-cell-from-wb-map depends-sheet depends-label wb-map-with-dependencies)]
+                      (-> accum
+                          (uber/add-nodes-with-attrs [node-1 node-1-map])
+                          (uber/add-nodes-with-attrs [node-2 node-2-map])
+                          (uber/add-edges [node-2 node-1]))))
+                  (uber/digraph)
+                  (if include-all-formula-cells?
+                    (add-self-dependencies wb-map-with-dependencies)
+                    dependencies)))))
 
 (defn get-recalc-node-sequence
   "Given an updated node at updated-node, return a sequence or other nodes that need
@@ -242,39 +242,52 @@
               interim-result))))))
 
 (defn substitute-ranges [unsubstituted-form]
+  ;; TODO: the ns-resolve is not really needed. Could be replaced
+  ;; with a pure 'graph/eval-range.
   (walk/postwalk
    (fn [form]
      (if (and (list? form) 
               (= 'eval-range (first form)))
        (let [e (concat 
-                (cons (resolve (first form)) (rest form)) 
+                (cons (ns-resolve 'graph (first form)) (rest form)) 
                 (list `*context*))]
          `(~@e))
        form))
    unsubstituted-form))
 
-(defn recalc-workbook [{:keys [graph] :as wb-map} sheet-name]
-  (reduce (fn [accum node]
-            (let [[node {:keys [sheet formula value] :as attrs}]
-                  (uber/node-with-attrs graph node)]
-              (if formula
-                (let [formula-code (-> (str "=" formula)
-                                       (parse/parse-to-tokens)
-                                       (parse/nest-ast)
-                                       (parse/wrap-ast)
-                                       (ast/process-tree)
-                                       (sh/parse-expression-tokens)
-                                       (ast/unroll-for-code-form sheet-name))
-                      calculated-result (binding [*context* wb-map]
-                                          (-> formula-code
-                                              (substitute-ranges)
-                                              (eval)))]
-                  (conj
-                   accum
-                   [node (= value calculated-result) formula value formula-code calculated-result]))
-                accum)))
-          []
-          (alg/topsort graph)))
+(defn recalc-workbook
+  "Recalculate a workbook's sheet. Standard assumption is that 
+   a graph is available and that it's acyclic. If it's not acyclic
+   this function will return no results. However, by setting 
+   recalc-all?, a calculation can be forced over all the nodes 
+   that include formulae, by using a different ordering algorithmn
+   that topological sort."
+  ([wb-map sheet-name]
+   (recalc-workbook wb-map sheet-name false))
+  ([{:keys [graph] :as wb-map} sheet-name recalc-all?]
+   (reduce (fn [accum node]
+             (let [[node {:keys [sheet formula value] :as attrs}]
+                   (uber/node-with-attrs graph node)]
+               (if formula
+                 (let [formula-code (-> (str "=" formula)
+                                        (parse/parse-to-tokens)
+                                        (parse/nest-ast)
+                                        (parse/wrap-ast)
+                                        (ast/process-tree)
+                                        (sh/parse-expression-tokens)
+                                        (ast/unroll-for-code-form sheet-name))
+                       calculated-result (binding [*context* wb-map]
+                                           (-> formula-code
+                                               (substitute-ranges)
+                                               (eval)))]
+                   (conj
+                    accum
+                    [node (= value calculated-result) formula value formula-code calculated-result]))
+                 accum)))
+           []
+           (if recalc-all?
+             (reverse (alg/post-traverse graph))
+             (alg/topsort graph)))))
 
 (comment
 

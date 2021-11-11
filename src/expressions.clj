@@ -63,14 +63,21 @@
        t))
    form))
 
-(defn reduce-by-comp-expression [expr-form val-seq]
-  (filter
-   (fn [c-val]
-     (eval (walk/postwalk-replace
-            {'(eval-range
-               "$SELF") c-val}
-            expr-form)))
-   val-seq))
+(defn reduce-by-comp-expression [expr-form search-seq & [val-seq]]
+  (let [val-seq (or val-seq search-seq)]
+    (loop [s-seq search-seq v-seq val-seq filtered-seq []]
+      (if-not (seq s-seq)
+        filtered-seq
+        (let [s-val (first s-seq)
+              v-val (first v-seq)
+              match? (eval (walk/postwalk-replace
+                            {'(eval-range
+                               "$SELF") s-val}
+                            expr-form))]
+          (recur
+           (rest s-seq)
+           (rest v-seq)
+           (if match? (conj filtered-seq v-val) filtered-seq)))))))
 
 (comment 
   (re-matches #"^(<(?!>)|(?<!<)>|=|<>).*$" ">100.0")

@@ -139,14 +139,15 @@
            :return r-val})
     r-val))
 
-(defn fn-sumif [& [range criteria sum-range]]
+(defn fn-sumif [& [search-range criteria sum-range]]
   (let [expr-code (-> criteria
                       (expressions/recast-comparative-expression)
                       (expressions/->code)
                       (expressions/code->with-regex))
-        filtered-range (expressions/reduce-by-comp-expression expr-code range)]
+        filtered-range (expressions/reduce-by-comp-expression expr-code search-range sum-range)]
     (tap> {:loc fn-sumif
-           :range range
+           :search-range search-range
+           :sum-range sum-range
            :criteria criteria
            :recast (expressions/recast-comparative-expression criteria)
            :code expr-code

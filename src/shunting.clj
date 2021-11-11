@@ -1,13 +1,12 @@
 (ns shunting
   (:require [clojure.string :as str]
-            [clojure.walk :as walk]
-            [functions :as fns]))
+            [clojure.walk :as walk]))
 
 (def OPERATORS-PRECEDENCE
   [{:name :unary-plus :s "+" :f '+ :c :prefix :a 1 :e [:OperatorPrefix nil]}
    {:name :unary-minus :s "-" :f '- :c :prefix :a 1 :e [:OperatorPrefix nil]}
 
-   {:name :unary-prcnt :s "%" :f `fns/prcnt :c :postfix :a 1 :e [:OperatorPostfix nil]}
+   {:name :unary-prcnt :s "%" :f 'functions/prcnt :c :postfix :a 1 :e [:OperatorPostfix nil]}
 
    {:name :binary-mult :s "*" :f '* :c :infix :a 2 :e [:OperatorInfix :Math]}
    {:name :binary-div :s "/" :f '/  :c :infix :a 2 :e [:OperatorInfix :Math]}
@@ -16,34 +15,34 @@
    {:name :binary-exp :s "^" :f '** :c :infix :a 2 :e [:OperatorInfix :Math]}
    {:name :binary-concat :s "&" :f 'str :c :infix :a 2 :e [:OperatorInfix :Concatenation]} ; what should this do? There are coercions to text in Excel
 
-   {:name :compare-eq :s "=" :f `fns/fn-equal :c :infix :a 2 :e [:OperatorInfix :Logical]}
+   {:name :compare-eq :s "=" :f 'functions/fn-equal :c :infix :a 2 :e [:OperatorInfix :Logical]}
    {:name :compare-gt :s ">" :f '> :c :infix :a 2 :e [:OperatorInfix :Logical]}
    {:name :compare-lt :s "<" :f '< :c :infix :a 2 :e [:OperatorInfix :Logical]}
    {:name :compare-gte :s ">=" :f '>= :c :infix :a 2 :e [:OperatorInfix :Logical]}
    {:name :compare-lte :s "<=" :f '<= :c :infix :a 2 :e [:OperatorInfix :Logical]}
    {:name :compare-neq :s "<>" :f 'not= :c :infix :a 2 :e [:OperatorInfix :Logical]}
 
-   {:name :abs :s "abs" :f `fns/abs :c :args :a 1 :e [:Function :Start]}
+   {:name :abs :s "abs" :f 'functions/abs :c :args :a 1 :e [:Function :Start]}
    {:name :sin :s "sin" :f 'Math/sin :c :args :a 1 :e [:Function :Start]}
-   {:name :true :s "true" :f `fns/fn-true :c :args :a 0 :e [:Function :Start]}
-   {:name :false :s "false" :f `fns/fn-false :c :args :a 0 :e [:Function :Start]}
-   {:name :and :s "and" :f `fns/fn-and :c :args :a :all :e [:Function :Start]}
-   {:name :or :s "or" :f `fns/fn-or :c :args :a :all :e [:Function :Start]}
-   {:name :not :s "not" :f `fns/fn-not :c :args :a 1 :e [:Function :Start]}
+   {:name :true :s "true" :f 'functions/fn-true :c :args :a 0 :e [:Function :Start]}
+   {:name :false :s "false" :f 'functions/fn-false :c :args :a 0 :e [:Function :Start]}
+   {:name :and :s "and" :f 'functions/fn-and :c :args :a :all :e [:Function :Start]}
+   {:name :or :s "or" :f 'functions/fn-or :c :args :a :all :e [:Function :Start]}
+   {:name :not :s "not" :f 'functions/fn-not :c :args :a 1 :e [:Function :Start]}
    {:name :max :s "max" :f 'max :c :args :a :all :e [:Function :Start]}
    {:name :min :s "min" :f 'min :c :args :a :all :e [:Function :Start]}
-   {:name :pi :s "pi" :f `fns/pi :c :args :a 0 :e [:Function :Start]}
-   {:name :sum :s "sum" :f `fns/sum :c :args :a :all :e [:Function :Start]}
-   {:name :average :s "average" :f `fns/average :c :args :a :all :e [:Function :Start]}
-   {:name :count :s "count" :f `fns/fn-count :c :args :a :all :e [:Function :Start]}
-   {:name :count :s "counta" :f `fns/fn-counta :c :args :a :all :e [:Function :Start]}
-   {:name :now :s "now" :f `fns/fn-now :c :args :a 0 :e [:Function :Start]}
-   {:name :date :s "date" :f `fns/fn-date :c :args :a :all :e [:Function :Start]}
-   {:name :days :ext true :s "_xlfn.days" :f `fns/fn-days :c :args :a :all :e [:Function :Start]}
-   {:name :datevalue :s "datevalue" :f `fns/fn-datevalue :c :args :a 1 :e [:Function :Start]}
-   {:name :yearfrac :s "yearfrac" :f `fns/fn-yearfrac :c :args :a :all :e [:Function :Start]}
-   {:name :vlookup :s "vlookup" :f `fns/fn-vlookup :c :args :a :all :e [:Function :Start]}
-   {:name :sumif :s "sumif" :f `fns/fn-sumif :c :args :a :all :e [:Function :Start]}
+   {:name :pi :s "pi" :f 'functions/pi :c :args :a 0 :e [:Function :Start]}
+   {:name :sum :s "sum" :f 'functions/sum :c :args :a :all :e [:Function :Start]}
+   {:name :average :s "average" :f 'functions/average :c :args :a :all :e [:Function :Start]}
+   {:name :count :s "count" :f 'functions/fn-count :c :args :a :all :e [:Function :Start]}
+   {:name :count :s "counta" :f 'functions/fn-counta :c :args :a :all :e [:Function :Start]}
+   {:name :now :s "now" :f 'functions/fn-now :c :args :a 0 :e [:Function :Start]}
+   {:name :date :s "date" :f 'functions/fn-date :c :args :a :all :e [:Function :Start]}
+   {:name :days :ext true :s "_xlfn.days" :f 'functions/fn-days :c :args :a :all :e [:Function :Start]}
+   {:name :datevalue :s "datevalue" :f 'functions/fn-datevalue :c :args :a 1 :e [:Function :Start]}
+   {:name :yearfrac :s "yearfrac" :f 'functions/fn-yearfrac :c :args :a :all :e [:Function :Start]}
+   {:name :vlookup :s "vlookup" :f 'functions/fn-vlookup :c :args :a :all :e [:Function :Start]}
+   {:name :sumif :s "sumif" :f 'functions/fn-sumif :c :args :a :all :e [:Function :Start]}
 
    {:name :if :s "if" :f 'if :c :args :a 3 :e [:Function :Start]}])
 
