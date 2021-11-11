@@ -123,7 +123,7 @@ in the definition lets the parser know how many arguments to expect.
   as the following functions `abs`, `sin`, `true`, `false`, `and`, `or`, `max`, `min`, `pi`, `now`, `date`, `days`, `datevalue`, `yearfrac`,
   `sum`, `average`, `count`, `counta` & `if`. Others will be added as necessary.
   
-> A preliminary implementation of `vlookup` is also included. This will be extended.
+> A preliminary implementation of `vlookup` and `sumif` are also included. These will be extended and improved.
 
 
 As an example 
