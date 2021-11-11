@@ -2,10 +2,25 @@
   (:require
    [clojure.string :as str]
    [excel :as excel]
+   [expressions :as expressions]
    [clojure.math.numeric-tower :as math])
   (:import 
    [java.time LocalDateTime]
    [java.util Calendar Calendar$Builder]))
+
+(defn fn-equal 
+  "Replacement for `=` to handle cases where
+   the value against which to compare `v1` (`v2`) is
+   a regular expression. Used by certain functions
+   that allow a comparison to be specified in the
+   Excel formula (e.g. SUMIF)
+   TODO: check if an RE can be used with a number.
+   Currently, this is allowed, but it may not be 
+   consistent with how Excel works."
+  [v1 v2]
+  (if (instance? java.util.regex.Pattern v2)
+    (re-matches v2 (str v1))
+    (= v1 v2)))
 
 (defn abs [v]
   (if (neg? v)
@@ -123,6 +138,22 @@
            :table-array (convert-vector-to-table table-array-as-vector)
            :return r-val})
     r-val))
+
+(defn fn-sumif [& [search-range criteria sum-range]]
+  (let [expr-code (-> criteria
+                      (expressions/recast-comparative-expression)
+                      (expressions/->code)
+                      (expressions/code->with-regex))
+        filtered-range (expressions/reduce-by-comp-expression expr-code search-range sum-range)]
+    (tap> {:loc fn-sumif
+           :search-range search-range
+           :sum-range sum-range
+           :criteria criteria
+           :recast (expressions/recast-comparative-expression criteria)
+           :code expr-code
+           :f-range filtered-range
+           :result (apply + filtered-range)})
+    (apply + filtered-range)))
 
 (comment
   (abs -10)

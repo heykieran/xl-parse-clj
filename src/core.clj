@@ -3,18 +3,8 @@
    [xlparse :as parse]
    [shunting :as sh]
    [ast-processing :as ast]
-   [clojure.walk :as walk]
    [excel :as excel]
-   [functions :as functions]))
-
-(comment
-  (-> "=(1+2+3)*(10+20+30)/(40+50+60)"
-      (parse/parse-to-tokens)
-      (parse/nest-ast))
-  (-> "=1+2+3"
-      (parse/parse-to-tokens)
-      (parse/nest-ast))
-  :end)
+   [graph :as graph]))
 
 (defn compare-ok? [{:keys [value result] :as r-map}]
   (if (and (number? result) (number? value))
@@ -30,31 +20,59 @@
     (double v)
     v))
 
-(defn run-tests []
-  (->> (excel/extract-test-formulas "TEST1.xlsx" "Sheet1")
-       (reduce
-        (fn [accum {:keys [type formula format address row column value
-                           :calc-date-value :excel-date-value] :as fcell-info}]
-          (conj accum
-                (let [clj-exp (-> (str "=" formula)
-                                  (parse/parse-to-tokens)
-                                  (parse/nest-ast)
-                                  (parse/wrap-ast)
-                                  (ast/process-tree)
-                                  (sh/parse-expression-tokens)
-                                  (ast/unroll-for-code-form))]
-                  (-> fcell-info
-                      (assoc
-                       :clj
-                       clj-exp
-                       :result
-                       (-> (eval clj-exp)
-                           (convert-result)))
-                      (validate)))))
-        [])))
+(defn run-tests
+  ([]
+   (run-tests "TEST1.xlsx" "Sheet1"))
+  ([workbook-name sheet-name]
+   (->> (excel/extract-test-formulas workbook-name sheet-name)
+        (reduce
+         (fn [accum {:keys [type formula format address row column value
+                            :calc-date-value :excel-date-value] :as fcell-info}]
+           (conj accum
+                 (let [clj-exp (-> (str "=" formula)
+                                   (parse/parse-to-tokens)
+                                   (parse/nest-ast)
+                                   (parse/wrap-ast)
+                                   (ast/process-tree)
+                                   (sh/parse-expression-tokens)
+                                   (ast/unroll-for-code-form))]
+                   (-> fcell-info
+                       (assoc
+                        :clj
+                        clj-exp
+                        :result
+                        (-> (eval clj-exp)
+                            (convert-result)))
+                       (validate)))))
+         []))))
+
+(defn test-recalc-worksheet
+  ([workbook-name worksheet-name]
+   (test-recalc-worksheet workbook-name worksheet-name false))
+  ([workbook-name worksheet-name include-independent-formula-cells?]
+   (mapv (fn [[node match? formula value formula-code calculated-result]]
+           {:cell node
+            :match? match?
+            :result calculated-result
+            :excel-value value
+            :formula formula})
+         (->
+          (graph/explain-workbook workbook-name worksheet-name)
+          (graph/get-cell-dependencies)
+          (graph/add-graph include-independent-formula-cells?)
+          (graph/recalc-workbook worksheet-name include-independent-formula-cells?)))))
 
 
 (comment
+
+  (run-tests)
+  (run-tests "TEST1.xlsx" "Sheet1")
+  (test-recalc-worksheet "TEST1.xlsx" "Sheet1")
+  (test-recalc-worksheet "TEST1.xlsx" "Sheet1" true)
+  (test-recalc-worksheet "TEST1.xlsx" "Sheet3")
+  (test-recalc-worksheet "TEST1.xlsx" "Sheet3" true)
+  (test-recalc-worksheet "TEST-cyclic.xlsx" "Sheet3")
+  (test-recalc-worksheet "TEST-cyclic.xlsx" "Sheet3" true)
 
   (-> "=max(1,max(1,(2),4))"
       (parse/parse-to-tokens)
@@ -189,16 +207,34 @@
       (ast/process-tree)
       (sh/parse-expression-tokens)
       (ast/unroll-for-code-form))
-  
+
+  (-> "=SUMIF(J4:J6,\">200\")"
+      (parse/parse-to-tokens)
+      (parse/nest-ast)
+      (parse/wrap-ast)
+      (ast/process-tree)
+      (sh/parse-expression-tokens)
+      (ast/unroll-for-code-form))
+
+  (-> "=SUMIF(J4:J6,E1)"
+      (parse/parse-to-tokens)
+      (parse/nest-ast)
+      (parse/wrap-ast)
+      (ast/process-tree)
+      (sh/parse-expression-tokens)
+      (ast/unroll-for-code-form))
+
+  (-> "=IF(X>200,1,0)"
+      (parse/parse-to-tokens)
+      (parse/nest-ast)
+      (parse/wrap-ast)
+      (ast/process-tree)
+      (sh/parse-expression-tokens)
+      (ast/unroll-for-code-form))
+
   (->> (run-tests)
        (filter #(false? (:ok? %))))
 
   (run-tests)
 
-  (boolean 1.0)
-  (not (boolean 0))
-  (functions/fn-not (if (not= 1.0 1.0) 1.0 0.0))
-  (some #(true? (boolean %)) '(1.0 2.0 3.0))
-
   :end)
-
