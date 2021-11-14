@@ -140,7 +140,9 @@
   [{:keys [cells] :as wb-map}]
   (-> wb-map
       (assoc :dependencies
-             (reduce (fn [accum {cell-label :label cell-formula :formula cell-references :references :as cell-map}]
+             (reduce (fn [accum {cell-sheet :sheet cell-label :label 
+                                 cell-formula :formula cell-references :references 
+                                 :as cell-map}]
                        (if cell-references
                          (concat
                           accum
@@ -154,12 +156,12 @@
 
 (defn get-cell-from-wb-map
   "Return the cell for a sheet and label, but without the :references key"
-  [cell-sheet cell-label {:keys [cells] :as wb-map-with-dependencies}]
-  (some (fn [{:keys [sheet label] :as cell}]
-          (when (and (= sheet cell-sheet)
-                     (= label cell-label))
-            (dissoc cell :references)))
-        cells))
+  ([cell-sheet cell-label {:keys [cells] :as wb-map-with-dependencies}]
+   (some (fn [{:keys [sheet label] :as cell}]
+           (when (and (= sheet cell-sheet)
+                      (= label cell-label))
+             (dissoc cell :references)))
+         cells)))
 
 (defn add-self-dependencies
   "Add cells with formulas, but with no dependencies to the
@@ -178,7 +180,7 @@
          accum
          ;; add the cell to the map as having a formula and
          ;; depending on itself, so that we can force a recalc
-         (conj accum [independent-cell independent-cell])))
+         (conj accum [independent-cell "$$ROOT"])))
      dependent-cells
      independent-cells)))
 
@@ -198,7 +200,8 @@
                           (uber/add-nodes-with-attrs [node-1 node-1-map])
                           (uber/add-nodes-with-attrs [node-2 node-2-map])
                           (uber/add-edges [node-2 node-1]))))
-                  (uber/digraph)
+                  (-> (uber/digraph)
+                      (uber/add-nodes-with-attrs [(str cell-sheet "!$$ROOT") {}]))
                   (if include-all-formula-cells?
                     (add-self-dependencies wb-map-with-dependencies)
                     dependencies)))))
@@ -293,23 +296,69 @@
 
   {:vlaaad.reveal/command '(clear-output)}
 
-  (explain-workbook "TEST-cyclic.xlsx" "Sheet3")
+  (explain-workbook "TEST-cyclic.xlsx" "Sheet1")
 
   (-> "TEST-cyclic.xlsx"
-      (explain-workbook "Sheet3")
-      (get-cell-dependencies))
+      (explain-workbook "Sheet1")
+      #_(get-cell-dependencies))
+  
+  (-> "TEST-cyclic.xlsx"
+      (explain-workbook "Sheet1")
+      (get-cell-dependencies)
+      (add-self-dependencies))
 
   (-> "TEST-cyclic.xlsx"
-      (explain-workbook "Sheet3")
+      (explain-workbook "Sheet1")
       (get-cell-dependencies)
       (add-graph))
 
   (def WB-MAP
     (-> "TEST-cyclic.xlsx"
-        (explain-workbook "Sheet3")
+        (explain-workbook "Sheet1")
         (get-cell-dependencies)
-        (add-graph)))
+        (add-graph true)))
+  
+  (uber/viz-graph (:graph WB-MAP))
 
+  (ubergraph.alg/connected-components (:graph WB-MAP))
+  
+  (-> (let [g (:graph WB-MAP)
+        r "$$ROOT"]
+    (reduce (fn [g n]
+              (let [id (uber/in-degree g n)]
+                (if (or
+                     (= 0 id)
+                     (and (= 1 id) (uber/find-edge g n n)))
+                  (let [[cell-sheet cell-label] (clojure.string/split n #"\!")
+                        node-with-map (get-cell-from-wb-map cell-sheet cell-label WB-MAP)]
+                    (-> g 
+                        (uber/add-nodes-with-attrs [n node-with-map])
+                        (uber/add-edges [r n])))
+                  g)))
+            (-> g (uber/add-nodes-with-attrs [r {}]))
+            (uber/nodes g)))
+      (uber/viz-graph))
+  
+  (let [node-1 (str cell-sheet "!" cell-label)
+        node-2 (str depends-sheet "!" depends-label)
+        node-1-map (get-cell-from-wb-map cell-sheet cell-label wb-map-with-dependencies)
+        node-2-map (get-cell-from-wb-map depends-sheet depends-label wb-map-with-dependencies)]
+    (-> accum
+        (uber/add-nodes-with-attrs [node-1 node-1-map])
+        (uber/add-nodes-with-attrs [node-2 node-2-map])
+        (uber/add-edges [node-2 node-1])))
+  
+  (uber/in-degree (:graph WB-MAP) "Sheet1!C1")
+  (uber/edges (:graph WB-MAP) "Sheet1!C1")
+  (ubergraph.alg/shortest-path (:graph WB-MAP) {:start-node "Sheet1!B1"})
+  (map (partial uber/edge-with-attrs 
+                (:graph WB-MAP)) 
+       (uber/edges (:graph WB-MAP)))
+  (ubergraph.alg/scc (:graph WB-MAP))
+  (uber/node-with-attrs (:graph WB-MAP) "Sheet1!B4")
+  (ubergraph.alg/connect (:graph WB-MAP))
+  (uber/viz-graph (ubergraph.alg/connect (:graph WB-MAP)))
+  (uber/nodes (:graph WB-MAP))
   (uber/pprint (:graph WB-MAP))
   (uber/viz-graph (:graph WB-MAP))
   (uber/node-with-attrs (:graph WB-MAP) "Sheet3!B3")
