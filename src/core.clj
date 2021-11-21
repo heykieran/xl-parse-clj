@@ -4,7 +4,8 @@
    [shunting :as sh]
    [ast-processing :as ast]
    [excel :as excel]
-   [graph :as graph]))
+   [graph :as graph]
+   [functions]))
 
 (defn compare-ok? [{:keys [value result] :as r-map}]
   (if (and (number? result) (number? value))
@@ -48,8 +49,6 @@
 
 (defn test-recalc-worksheet
   ([workbook-name worksheet-name]
-   (test-recalc-worksheet workbook-name worksheet-name false))
-  ([workbook-name worksheet-name include-independent-formula-cells?]
    (mapv (fn [[node match? formula value formula-code calculated-result]]
            {:cell node
             :match? match?
@@ -59,20 +58,16 @@
          (->
           (graph/explain-workbook workbook-name worksheet-name)
           (graph/get-cell-dependencies)
-          (graph/add-graph include-independent-formula-cells?)
-          (graph/recalc-workbook worksheet-name include-independent-formula-cells?)))))
-
+          (graph/add-graph)
+          (graph/recalc-workbook worksheet-name)))))
 
 (comment
 
   (run-tests)
   (run-tests "TEST1.xlsx" "Sheet1")
   (test-recalc-worksheet "TEST1.xlsx" "Sheet1")
-  (test-recalc-worksheet "TEST1.xlsx" "Sheet1" true)
   (test-recalc-worksheet "TEST1.xlsx" "Sheet3")
-  (test-recalc-worksheet "TEST1.xlsx" "Sheet3" true)
   (test-recalc-worksheet "TEST-cyclic.xlsx" "Sheet3")
-  (test-recalc-worksheet "TEST-cyclic.xlsx" "Sheet3" true)
 
   (-> "=max(1,max(1,(2),4))"
       (parse/parse-to-tokens)
