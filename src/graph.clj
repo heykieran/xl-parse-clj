@@ -181,9 +181,7 @@
 (defn get-cell-from-wb-map
   "Return the cell for a sheet and label, but without the :references key"
   ([cell-sheet cell-label wb-map-with-dependencies]
-   (->> wb-map-with-dependencies
-        (get cell-sheet)
-        (:cells)
+   (->> (get-in wb-map-with-dependencies [cell-sheet :cells])
         (some (fn [{:keys [sheet label] :as cell}]
                 (when (and (= sheet cell-sheet)
                            (= label cell-label))
@@ -228,7 +226,7 @@
 
 (defn add-graph
   ([wb-map-with-dependencies]
-   (add-graph wb-map-with-dependencies false))
+   (add-graph wb-map-with-dependencies true))
   ([wb-map-with-dependencies include-all-formula-cells?]
    (assoc wb-map-with-dependencies
           :graph
@@ -346,16 +344,14 @@
 (defn recalc-workbook
   "Recalculate a workbook's sheet. Standard assumption is that 
    a graph is available and that it's acyclic. If it's not acyclic
-   this function will return no results. However, by setting 
-   recalc-all?, a calculation can be forced over all the nodes 
-   that include formulae, by using a different ordering algorithmn
-   that topological sort."
-  ([wb-map sheet-name]
-   (recalc-workbook wb-map sheet-name false))
-  ([{:keys [graph] :as wb-map} sheet-name recalc-all?]
+   this function will return no results. Don't supply a graph
+   that's not a DAG"
+  ([{:keys [graph] :as wb-map} sheet-name]
    (reduce (fn [accum node]
              (let [[node {:keys [sheet formula value] :as attrs}]
                    (uber/node-with-attrs graph node)]
+               (tap> {:n node
+                      :a attrs})
                (if formula
                  (let [formula-code (-> (str "=" formula)
                                         (parse/parse-to-tokens)
@@ -373,95 +369,65 @@
                     [node (= value calculated-result) formula value formula-code calculated-result]))
                  accum)))
            []
-           (if recalc-all?
-             (reverse (alg/post-traverse graph))
-             (alg/topsort graph)))))
+           (alg/topsort graph))))
 
 (comment
 
   {:vlaaad.reveal/command '(clear-output)}
 
-  (explain-workbook "TEST-cyclic.xlsx" "Sheet1")
+  (-> "TEST-cyclic.xlsx"
+      (explain-workbook "Sheet1"))
 
   (-> "TEST-cyclic.xlsx"
-      (explain-workbook)
-      (get-cell-dependencies)
-      (add-graph true)
-      (connect-disconnected-regions)
-      (:graph)
-      (uber/viz-graph))
-  
-  (-> "TEST-cyclic.xlsx"
       (explain-workbook "Sheet1")
-      (get "Sheet1")
       (get-cell-dependencies))
   
   (-> "TEST-cyclic.xlsx"
       (explain-workbook "Sheet1")
-      (get "Sheet1")
       (get-cell-dependencies)
-      (add-self-dependencies-for-sheet))
+      (add-self-dependencies))
 
   (-> "TEST-cyclic.xlsx"
       (explain-workbook "Sheet1")
-      (get "Sheet1")
       (get-cell-dependencies)
-      (add-graph))
+      (add-graph false))
+  
+    (-> "TEST-cyclic.xlsx"
+        (explain-workbook "Sheet1")
+        (get-cell-dependencies)
+        (add-graph)
+        (connect-disconnected-regions)
+        (:graph)
+        (uber/viz-graph))
 
   (def WB-MAP
     (-> "TEST-cyclic.xlsx"
         (explain-workbook "Sheet1")
-        (get "Sheet1")
         (get-cell-dependencies)
-        (add-graph true)
+        (add-graph)
         (connect-disconnected-regions)))
   
   (uber/viz-graph (:graph WB-MAP))
 
   (ubergraph.alg/connected-components (:graph WB-MAP))
   
-  (-> (let [g (:graph WB-MAP)
-        r "Sheet1!$$ROOT"]
-    (reduce (fn [g n]
-              (let [id (uber/in-degree g n)]
-                (if (and (not= n r)
-                         (or
-                          (= 0 id)
-                          (and (= 1 id) (uber/find-edge g n n))))
-                  (let [[cell-sheet cell-label] (clojure.string/split n #"\!")
-                        node-with-map (get-cell-from-wb-map cell-sheet cell-label WB-MAP)]
-                    (-> g 
-                        (uber/add-nodes-with-attrs [n node-with-map])
-                        (uber/add-edges [r n])))
-                  g)))
-            (-> g (uber/add-nodes-with-attrs [r {}]))
-            (uber/nodes g)))
-      (uber/viz-graph))
-  
-  (let [node-1 (str cell-sheet "!" cell-label)
-        node-2 (str depends-sheet "!" depends-label)
-        node-1-map (get-cell-from-wb-map cell-sheet cell-label wb-map-with-dependencies)
-        node-2-map (get-cell-from-wb-map depends-sheet depends-label wb-map-with-dependencies)]
-    (-> accum
-        (uber/add-nodes-with-attrs [node-1 node-1-map])
-        (uber/add-nodes-with-attrs [node-2 node-2-map])
-        (uber/add-edges [node-2 node-1])))
-  
   (uber/in-degree (:graph WB-MAP) "Sheet1!C1")
-  (uber/edges (:graph WB-MAP) "Sheet1!C1")
+  (uber/edges (:graph WB-MAP))
+  (uber/nodes (:graph WB-MAP))
   (ubergraph.alg/shortest-path (:graph WB-MAP) {:start-node "Sheet1!B1"})
   (map (partial uber/edge-with-attrs 
                 (:graph WB-MAP)) 
        (uber/edges (:graph WB-MAP)))
   (ubergraph.alg/scc (:graph WB-MAP))
   (uber/node-with-attrs (:graph WB-MAP) "Sheet1!B4")
+  (uber/node-with-attrs (:graph WB-MAP) "Sheet1!$$ROOT")
   (ubergraph.alg/connect (:graph WB-MAP))
   (uber/viz-graph (ubergraph.alg/connect (:graph WB-MAP)))
   (uber/nodes (:graph WB-MAP))
   (uber/pprint (:graph WB-MAP))
   (uber/viz-graph (:graph WB-MAP))
   (uber/node-with-attrs (:graph WB-MAP) "Sheet3!B3")
-
+  (ubergraph.alg/dag? (:graph WB-MAP))
 
   (expand-cell-range "Sheet2!B3:D3" (:named-ranges WB-MAP))
   (expand-cell-range "Sheet2!BONUS" (:named-ranges WB-MAP))
@@ -470,7 +436,6 @@
   (eval-range "Sheet2!C2:C4" WB-MAP)
   (eval-range "Sheet2!ALLOWEDTOTAL" WB-MAP)
   (eval-range "Sheet2!J4:J6" WB-MAP)
-
 
   (binding [*context* WB-MAP]
     (-> (substitute-ranges
@@ -500,26 +465,29 @@
 
   (def G
     (-> "TEST1.xlsx"
-        (explain-workbook-sheet "Sheet2")
+        (explain-workbook "Sheet2")
         (get-cell-dependencies)
         (add-graph)
+        (connect-disconnected-regions)
         :graph))
 
   (uber/pprint G)
   (uber/viz-graph G)
-  (uber/node-with-attrs G "Sheet2!A2")
+  (uber/node-with-attrs G "Sheet2!C4")
 
   (-> "TEST1.xlsx"
-      (explain-workbook-sheet "Sheet2")
+      (explain-workbook "Sheet2")
       (get-cell-dependencies)
       (add-graph)
+      (connect-disconnected-regions)
       :graph
       (uber/viz-graph))
 
   (reduce (fn [accum node]
             (conj
              accum
-             (let [[node {:keys [formula value] :as attrs}] (uber/node-with-attrs G node)]
+             (let [[node {:keys [formula value] :as attrs}] 
+                   (uber/node-with-attrs G node)]
                [node formula value])))
           []
           (alg/topsort G))
@@ -538,18 +506,5 @@
   (alg/nodes-in-path
    (alg/shortest-path G {:start-node "Sheet2!B3" :traverse false}))
 
-  (->>
-   {:start-node "Sheet2!B3"}
-   (alg/shortest-path G)
-   :depths
-   (reduce (fn [accum [cell-name depth]]
-             (update accum depth
-                     (fnil conj [])
-                     cell-name))
-           (sorted-map))
-   (reduce (fn [accum [depth cell-name]]
-             (concat accum cell-name))
-           []))
 
-  :end
-  )
+  :end)

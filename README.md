@@ -243,6 +243,7 @@ as follows
 (-> "TEST1.xlsx"
     (explain-workbook "Sheet2")
     (get-cell-dependencies)
+    (connect-disconnected-regions)
     (add-graph)
     :graph
     (uber/viz-graph))
@@ -264,7 +265,8 @@ As an example, if we `def` a variable to contain the *worksheet map* as follows:
     (-> "TEST1.xlsx"
         (explain-workbook "Sheet2")
         (get-cell-dependencies)
-        (add-graph)))
+        (add-graph)
+        (connect-disconnected-regions)))
 ```
 
 we can the use
