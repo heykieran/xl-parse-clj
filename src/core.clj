@@ -278,6 +278,8 @@
 
   (graph/eval-range "Sheet2!$L$4:$N$6" WB-MAP)
 
+  (meta (graph/eval-range "Sheet2!$L$4:$N$6" WB-MAP))
+
   (graph/recalc-workbook WB-MAP "Sheet2")
 
   (keep (fn [[cell-label match? cell-formula cell-value cell-code calculated-value :as calc]]

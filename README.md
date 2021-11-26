@@ -2,18 +2,19 @@
 
 ## Introduction
 
-This is a very rough proof of concept of converting a non-trivial, but not overly complicated, Excel workbook to Clojure code. It is just to scratch an itch, and I've made no effort yet to clean it up and turn it into a library. I'm making it available as is. If it's useful to you, that's great, but please realize that there's a long way to go before it is any more than merely marginally useful.
+This is an evolving proof of concept to convert a non-trivial, but not overly complicated, Excel workbook to Clojure code. It is at a very early stage, and I've, as yet, made no effort to clean it up and turn it into a library. I'm making it available as is. If it's useful to you, that's great, but please realize that there's a long way to go before it is any more than marginally useful.
 
-Over time, as that time becomes available to me, I'll expand it and refine it, but I make no  committments as to when that will be. Also, I've given little consideration to performance or catching exceptions.
+Over time, as that time becomes available to me, I'll expand it and refine it, but I make no committment as to when that will be. Also, I've given little consideration to performance or even catching exceptions in a sensible way. That's work for a later time.
 
 **Use anything here at your own risk.**
 
 At the moment, the only external dependencies, in addition to Clojure itself, are [docjure](https://github.com/mjul/docjure), [ubergraph](https://github.com/Engelberg/ubergraph), and  [numeric-tower](https://github.com/clojure/math.numeric-tower), all excellent libraries.
 
-**It is a work in progress, so you'll find a lot of `comment` forms scattered about the code. These may or
-may not work at any particular time, but I find them useful**
+**It is a work in progress, so you'll find a lot of `comment` forms scattered about the code. These may or may not work at any particular time, but I find them useful**
 
-## Convert Excel formulas to AST
+The examples below should be run from the `core` namespace.
+
+## Convert Excel formulae to AST
 
 Much of the effort of extracting an AST from an individual Excel formula is based on some excellent prior work done by E. W. Bachtal and can be found [here](https://ewbi.blogs.com/develops/). 
 
@@ -55,8 +56,7 @@ returns
  {:value "$A$4", :type :Operand, :sub-type :Range}]
 ```
 
-This gives the AST for a single Excel formula, but to be more useful, it's helpful to provide
-some form of structural nesting.
+This gives the AST for a single Excel formula, but to be more useful, it's helpful to provide some form of structural nesting.
 
 The `parse/nest-ast` function provides such a facility, for example,
 
@@ -360,7 +360,9 @@ and expect to get an empty list `'()` returned.
 
 ## Future Work
 
-Obviously, now that we can calculate a workbook, it would be nice to be able to update input cell values and then recalculate those portions of the workbook that are effected, i.e. those cells whose value are at some level dependent on the updated cell.
+As time permits, I will expand the number of Excel functions that the software can handle.
+
+Also, now that we can calculate a workbook, it would be nice to be able to update input cell values and then recalculate those portions of the workbook that are affected, i.e. those cells whose value are, at some level, dependent on the value of the updated cell.
 
 ```clojure
 (graph/get-recalc-node-sequence "Sheet2!B1" WB-MAP)
