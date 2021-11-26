@@ -1,7 +1,6 @@
 (ns graph
   (:require
    [clojure.string :as str]
-   [clojure.java.io :as io]
    [ubergraph.core :as uber]
    [ubergraph.alg :as alg]
    [dk.ative.docjure.spreadsheet :as dk]
@@ -35,6 +34,15 @@
      :cols (inc (apply - (sort > [l-col f-col])))
      :rows (inc (apply - (sort > [l-row f-row])))}))
 
+(defn get-named-ranges-from-wb-map 
+  "For each sheet access its named ranges and consolidate
+   into a single sequence."
+  [wb-map]
+  (mapcat
+   (fn [[sheet-name {:keys [named-ranges] :as s-map}]]
+     named-ranges)
+   wb-map))
+
 (defn get-named-range-description-map [named-ranges cell-name]
   (when (and named-ranges (-> cell-name (AreaReference. SpreadsheetVersion/EXCEL2007) (.isSingleCell)))
     (some (fn [{:keys [name sheet] :as named-range}]
@@ -45,14 +53,16 @@
 (defn expand-cell-range
   ([cell-range-str]
    (expand-cell-range cell-range-str nil))
-  ([cell-range-str named-ranges]
+  ([cell-range-str wb-map]
    (letfn [(cell-info [ref-cell]
              (let [[sheet-name row-name col-name]
                    (.getCellRefParts ref-cell)]
                {:sheet sheet-name
                 :label (str col-name row-name)
                 :type :general}))]
-     (if-let [named-range (get-named-range-description-map named-ranges cell-range-str)]
+     (if-let [named-range (-> wb-map
+                              (get-named-ranges-from-wb-map)
+                              (get-named-range-description-map cell-range-str))]
        (:references named-range)
        (let [aref (AreaReference. cell-range-str SpreadsheetVersion/EXCEL2007)]
          (-> (mapv cell-info (.getAllReferencedCells aref))
@@ -124,7 +134,7 @@
          (dk/select-sheet sheet-name)
          dk/cell-seq
          (explain-sheet-cells sheet-name)
-         (add-references sheet-name named-ranges)
+         (add-references sheet-name {sheet-name {:named-ranges named-ranges}})
          ((fn [r]
             {:named-ranges named-ranges
              :cells r})))))
@@ -139,12 +149,12 @@
                                     (when (or (nil? sheet-name)
                                               (= s-name sheet-name))
                                       s-name)))))]
-     (reduce
-      (fn [accum sheet-name]
-        (assoc accum sheet-name
-               (explain-cells-in-sheet wb-as-resource sheet-name)))
-      {}
-      sheet-names))))
+     (->> sheet-names
+          (reduce
+           (fn [accum sheet-name]
+             (assoc accum sheet-name
+                    (explain-cells-in-sheet wb-as-resource sheet-name)))
+           {})))))
 
 (defn get-cell-dependencies-for-sheet
   "For an individual excel sheet, expressed as a map, say returned by explain-workbook,
@@ -307,8 +317,8 @@
              (concat accum cell-name))
            [])))
 
-(defn eval-range [range-str {:keys [named-ranges] :as wb-map}]
-  (let [expanded-range (expand-cell-range range-str named-ranges)
+(defn eval-range [range-str wb-map]
+  (let [expanded-range (expand-cell-range range-str wb-map)
         range-metadata (meta expanded-range)]
     (->> expanded-range
          (mapv (fn [{cell-sheet :sheet cell-label :label}]
@@ -351,8 +361,6 @@
    (reduce (fn [accum node]
              (let [[node {:keys [sheet formula value] :as attrs}]
                    (uber/node-with-attrs graph node)]
-               (tap> {:n node
-                      :a attrs})
                (if formula
                  (let [formula-code (-> (str "=" formula)
                                         (parse/parse-to-tokens)

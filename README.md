@@ -2,19 +2,13 @@
 
 ## Introduction
 
-This is a very rough proof of concept of converting a non-trivial, but not overly complicated, Excel
-workbook to Clojure code. It is just to scratch an itch, and I've made no effort yet to clean it up
-and turn it into a library. I'm making it available as is. If it's useful to you, that's great, but 
-please realize that there's a long way to go before it is any more than merely marginally useful.
+This is a very rough proof of concept of converting a non-trivial, but not overly complicated, Excel workbook to Clojure code. It is just to scratch an itch, and I've made no effort yet to clean it up and turn it into a library. I'm making it available as is. If it's useful to you, that's great, but please realize that there's a long way to go before it is any more than merely marginally useful.
 
-Over time, as that time becomes available to me, I'll expand it and refine it, but I make no 
-committments as to when that will be. Also, I've given little consideration to performance or catching
-exceptions.
+Over time, as that time becomes available to me, I'll expand it and refine it, but I make no  committments as to when that will be. Also, I've given little consideration to performance or catching exceptions.
 
 **Use anything here at your own risk.**
 
-At the moment, the only external dependencies, in addition to Clojure itself, are [docjure](https://github.com/mjul/docjure), [ubergraph](https://github.com/Engelberg/ubergraph), and 
-[numeric-tower](https://github.com/clojure/math.numeric-tower), all excellent libraries.
+At the moment, the only external dependencies, in addition to Clojure itself, are [docjure](https://github.com/mjul/docjure), [ubergraph](https://github.com/Engelberg/ubergraph), and  [numeric-tower](https://github.com/clojure/math.numeric-tower), all excellent libraries.
 
 **It is a work in progress, so you'll find a lot of `comment` forms scattered about the code. These may or
 may not work at any particular time, but I find them useful**
@@ -23,14 +17,11 @@ may not work at any particular time, but I find them useful**
 
 Much of the effort of extracting an AST from an individual Excel formula is based on some excellent prior work done by E. W. Bachtal and can be found [here](https://ewbi.blogs.com/develops/). 
 
-The algorithm was minimally "functionalized" and converted to Clojure, but I acknowledge
-a debt of gratitude to the original author.
+The algorithm was minimally "functionalized" and converted to Clojure, but I acknowledge a debt of gratitude to the original author.
 
-I considered ANTLR and other similar approaches, but rejected them because of the difficulty of dealing with
-all the quirks and edge cases of Excel formulas.
+I considered ANTLR and other similar approaches, but rejected them because of the difficulty of dealing with all the quirks and edge cases of Excel formulas.
 
-Most of the action occurs on the `parse/parse-to-tokens` function, which when given an Excel
-formula as a string will return the AST e.g.
+Most of the action occurs on the `parse/parse-to-tokens` function, which when given an Excel formula as a string will return the AST e.g.
 
 ```clojure
 (-> "=1+2"
@@ -92,40 +83,29 @@ returns the AST as a nested structure, below,
 
 ## Convert formula AST to equivalent Clojure code
 
-Now that we have a suitable AST, how do we convert it to code? The code uses a variation of
-the shunting-yard alogrithm where the precendences and associations are defined in the vector
-`shunting/OPERATORS-PRECEDENCE` and where the functions themselves are defined in the `functions`
-namespace or taken from `clojure.core`.
+Now that we have a suitable AST, how do we convert it to code? The code uses a variation of the shunting-yard alogrithm where the precendences and associations are defined in the vector `shunting/OPERATORS-PRECEDENCE` and where the functions themselves are defined in the `functions` namespace or taken from `clojure.core`.
 
 For example the `max` function is defined in the `shunting/OPERATORS-PRECEDENCE` vector as follows
 
 ```clojure
-{:name :max :s "max" :f 'max :c :args :a :all :e [:Function :Start]}
+{:name :max :s "max" :f 'functions/fn-max :c :args :a :all :e [:Function :Start]}
 ```
 
-which maps the excel formula symbol `"max"` to the clojure symbol `max`, which exists in the 
-`clojure.core` namespace.
+which maps the excel formula symbol `"max"` to the clojure symbol `fn-max`, which exists in the `functions` namespace.
 
 The `average` function is defined as follows
 
 ```clojure
-{:name :average :s "average" :f `fns/average :c :args :a :all :e [:Function :Start]}
+{:name :average :s "average" :f 'functions/average :c :args :a :all :e [:Function :Start}
 ```
 
-which maps the excel formula symbol `"average"` to the clojure `fns/average` symbol that is 
-defined in the `functions` namespace and aliased to `fns`.
+which maps the excel formula symbol `"average"` to the clojure `functions/average` symbol that is defined in the `functions` namespace.
 
-The order of the definitions in the `OPERATORS-PRECEDENCE` vector also determines the precedence
-of the operators when being processed by the shunting-yard algorithm. Furthermore, the `:a` field
-in the definition lets the parser know how many arguments to expect.
+The order of the definitions in the `OPERATORS-PRECEDENCE` vector also determines the precedence of the operators when being processed by the shunting-yard algorithm. Furthermore, the `:a` field in the definition lets the parser know how many arguments to expect.
 
-> As of this writing all Excel's mathematical and logical operators have been implemented, as well
-  as the following functions `abs`, `sin`, `true`, `false`, `and`, `or`, `max`, `min`, `pi`, `now`, `date`, `days`, `datevalue`, `yearfrac`,
-  `sum`, `average`, `count`, `counta` & `if`. Others will be added as necessary.
+> As of this writing all Excel's mathematical and logical operators have been implemented, as well as the following functions `abs`, `sin`, `true`, `false`, `and`, `or`, `max`, `min`, `pi`, `now`, `date`, `days`, `datevalue`, `yearfrac`,
+  `sum`, `average`, `count`, `counta`, `sumif`, `vlookup` & `if`. Others will be added as necessary.
   
-> A preliminary implementation of `vlookup` and `sumif` are also included. These will be extended and improved.
-
-
 As an example 
 
 ```clojure
@@ -141,7 +121,7 @@ As an example
 yields
 
 ```clojure
-(* (max 1.0 2.0) (eval-range "Sheet1!$A$4"))
+(* (functions/fn-max 1.0 2.0) (eval-range "Sheet1!$A$4"))
 ```
 
 ### Testing the formulas
@@ -150,31 +130,25 @@ Included as part of this repository in the `resources` directory is an Excel Wor
 
 The sheet **Sheet1** of the workbook contains a number of formulas with static input arguments i.e. arguments that  do **not** refer to other cells or named ranges.
 
-We can use this to verify that the clojure code being generated, when executed, returns the same
-value as Excel.
+We can use this to verify that the clojure code being generated, when executed, returns the same value as Excel.
 
-The `core/run-tests` function does this. It inspects all the formulas in the second column of **Sheet1**,
-converts them to clojure code, and evaluates that code. The function returns a vector of maps, one per formula,
-with a key `:ok?` which will be set to true if the value returned by the clojure evaluation
-is equal to the value calculated by Excel.
+The `core/run-tests` function does this. It inspects all the formulas in the second column of **Sheet1**, converts them to clojure code, and evaluates that code. The function returns a vector of maps, one per formula, with a key `:ok?` which will be set to true if the value returned by the clojure evaluation is equal to the value calculated by Excel.
 
 So, executing 
 
 ```clojure
 (->> (run-tests)
-       (filter #(false? (:ok? %))))
+     (filter #(false? (:ok? %))))
 ```
 
 should return an empty sequence, if all the tests pass.
 
 ## Working with Excel Workbooks
 
-Now, we're at a point where we can convert an Excel formula to a reasonable Clojure representation, but 
-we still need to solve for two problems.
+Now, we're at a point where we can convert an Excel formula to a reasonable Clojure representation, but we still need to solve for two problems.
 
 1. Referencing the Cell or Named Range values used in a formula (e.g. `$A$1` or `EMPLOYEES`), and
-2. Determining the calculation order for the workbook so that dependencies are calculated before the cells
-that depend on them.
+2. Determining the calculation order for the workbook so that dependencies are calculated before the cells that depend on them.
 
 With respect to item 1, as you've seen above, the formula
 
@@ -183,21 +157,16 @@ With respect to item 1, as you've seen above, the formula
 is converted to to the Clojure form
 
 ```clojure
-(* (max 1.0 2.0) (eval-range "Sheet1!$A$4"))
+(* (functions/fn-max 1.0 2.0) (eval-range "Sheet1!$A$4"))
 ```
 
 so, in order to proceed further, we'll need to both parse the workbook, and provide an implementation for `eval-range` that's aware of the values in the workbook.
 
-We'll treat a workbook as a DAG, where the DAG's edges link cells to dependent cells, and also provide a way 
-to resolve named ranges to the cells to which they refer.
+We'll treat a workbook as a DAG, where the DAG's edges link cells to dependent cells, and also provide a way to resolve named ranges to the cells to which they refer.
 
-The `graph/explain-workbook` provides base-level functionality to parse a workbook, returning a map with
-`:named-ranges` and `:cells` keys which respectively provide information about the named ranges and the 
-cells in the workbook. Each individual entry will also, in its `:references` value provide information
-about what other cells this cell references.
+The `graph/explain-workbook` provides base-level functionality to parse a workbook, returning a map with `:named-ranges` and `:cells` keys which respectively provide information about the named ranges and the cells in the workbook. Each individual entry will also, in its `:references` value provide information about what other cells this cell references.
 
-For example, a cell `Sheet2!E6` might contain the formula `=SUM(B2:B4)-SUM(C2:C4)` which Excel evaluates
-to the value 528. 
+For example, a cell `Sheet2!E6` might contain the formula `=SUM(B2:B4)-SUM(C2:C4)` which Excel evaluates to the value 528. 
 
 In that case, its matching entry in the `:cells` vector would be 
 
@@ -219,10 +188,9 @@ In that case, its matching entry in the `:cells` vector would be
    :row 5}
 ```
 
-You can see that the `:references` value contains the information about each cell on which the formula
-is dependent.
+You can see that the `:references` value contains the information about each cell on which the formula is dependent.
 
-In order to *"break out"* a sheet for a workbook you can run
+In order to *"break out"* a sheet for a workbook you can run (if you don't supply a sheet name then the entire workbook is processed.)
 
 ```clojure
 (graph/explain-workbook "TEST1.xlsx" "Sheet2")
@@ -237,7 +205,7 @@ We follow this with a call to `graph/add-graph` which uses the `:dependencies` k
 If you have graphviz installed, you can inspect the DAG produced from a slightly simpler version of the test workbook's second worksheet (called `INITIAL-TEST.xlsx`) as follows:
 
 ```clojure
-(-> "INITIAL-TEST.xlsx"
+(-> "INITIAL-TEST.xlsx" ; simpler workbook with a smaller graph
     (explain-workbook "Sheet2")
     (get-cell-dependencies)
     (add-graph)
@@ -252,24 +220,23 @@ If you have graphviz installed, you can inspect the DAG produced from a slightly
 
 It still remains to provide an implementation of the `eval-range` function that is returned in the Clojure expression for any formula cell that references one, or more, other cells.
 
-The code provides a function `graph/expand-cell-range` which when given a string describing a cell, a range 
-of cells, or a named range in a workbook will expand it to the individual cells referenced.
+The code provides a function `graph/expand-cell-range` which when given a string describing a cell, a range of cells, or a named range in a workbook will expand it to the individual cells referenced.
 
 As an example, if we `def` a variable to contain the *worksheet map* as follows:
 
 ```clojure
 (def WB-MAP
-    (-> "TEST1.xlsx"
-        (explain-workbook "Sheet2")
-        (get-cell-dependencies)
-        (add-graph)
-        (connect-disconnected-regions)))
+  (-> "TEST1.xlsx"
+      (graph/explain-workbook "Sheet2")
+      (graph/get-cell-dependencies)
+      (graph/add-graph)
+      (graph/connect-disconnected-regions)))
 ```
 
 we can the use
 
 ```clojure
-(expand-cell-range "Sheet2!B3:D3" (:named-ranges WB-MAP))
+(graph/expand-cell-range "Sheet2!B3:D3" WB-MAP)
 ```
 
 to return information about the range "Sheet2!B3:D3", which returns
@@ -283,19 +250,19 @@ to return information about the range "Sheet2!B3:D3", which returns
 and for a named range
 
 ```clojure
-(expand-cell-range "Sheet2!BONUS" (:named-ranges WB-MAP))
+(graph/expand-cell-range "Sheet2!BONUS" WB-MAP)
 ```
 
 returns the cell, or cells, to which the named range refers
 
 ```clojure
-[{:sheet "Sheet2", :label "B7", :type :general}]
+[{:sheet "Sheet2", :label "B9", :type :general}]
 ```
 
 Building on this is the actual `graph/eval-range` function
 
 ```clojure
-(eval-range "Sheet2!C2:C4" WB-MAP)
+(graph/eval-range "Sheet2!H4:H6" WB-MAP)
 ```
 
 which returns
@@ -306,15 +273,14 @@ which returns
 
 which is a vector of the values contained in the range. 
 
-Notice that _even_ for ranges that 
-describe a rectangular region (rather than a single row or a single column) `eval-range` 
-returns a vector.
+Notice that _even_ for ranges that describe a rectangular region (rather than a single row or a single column) `eval-range` returns a vector.
 
-However, `eval-range` also attaches meta-data to the vector returned, so that the _shape_
-of the range can be recovered and used by functions that expect tabular data. For example
+However, `eval-range` also attaches meta-data to the vector returned, so that the _shape_ of the range can be recovered and used by functions that expect tabular data. 
+
+For example
 
 ```clojure
-(eval-range "Sheet2!$L$4:$N$6" WB-MAP)
+(graph/eval-range "Sheet2!$L$4:$N$6" WB-MAP)
 ```
 
 returns
@@ -326,7 +292,7 @@ returns
 and
 
 ```clojure
-(meta (eval-range "Sheet2!$L$4:$N$6" WB-MAP))
+(meta (graph/eval-range "Sheet2!$L$4:$N$6" WB-MAP))
 ```
 
 returns
@@ -338,11 +304,9 @@ returns
 
 which describes how the vector can be converted to a table.
 
-> The function `expand-cell-range` adds the meta-data that is recapitulated by
-  `eval-range`
+> The function `expand-cell-range` adds the meta-data that is recapitulated by `eval-range`
 
-So, finally, the `graph` function will walk the DAG and recalculate, in the correct order, 
-the entire workbook using the clojure code that was generated during initial processing.
+So, finally, the `graph` function will walk the DAG and recalculate, in the correct order, the entire workbook using the clojure code that was generated during initial processing.
 
 So, calling the following to recalculate Sheet2 of the example workbook
 
@@ -350,39 +314,38 @@ So, calling the following to recalculate Sheet2 of the example workbook
 (recalc-workbook WB-MAP "Sheet2")
 ```
 
-will return a vector of tuples, where each tuple is the results of recalculating each formula
-cell and contains the cell reference, a boolean indicating whether the calculated value is equal
-to the cached value calculated by Excel, the text of the formula, the cached Excel result, the 
-clojure form representing the Excel formula, and the value calculated by evaluating the Clojure
-code.
+will return a vector of tuples, where each tuple is the results of recalculating each formula cell and contains the cell reference, a boolean indicating whether the calculated value is equal to the cached value calculated by Excel, the text of the formula, the cached Excel result, the clojure form representing the Excel formula, and the value calculated by evaluating the Clojure code.
 
 For example, using the demo workbook, we get
 
 ```clojure
-[["Sheet2!C3" true "BONUS * B3" 24.0 (* (eval-range "Sheet2!BONUS") (eval-range "Sheet2!B3")) 24.0]
- ["Sheet2!E3" true "SUM(B3:D3)" 229.0 (functions/sum (eval-range "Sheet2!B3:D3")) 229.0]
- ["Sheet2!C2" true "BONUS * B2" 12.0 (* (eval-range "Sheet2!BONUS") (eval-range "Sheet2!B2")) 12.0]
- ["Sheet2!B9" true "COUNTA(EMPLOYEES)" 3.0 (functions/fn-counta (eval-range "Sheet2!EMPLOYEES")) 3.0]
- ["Sheet2!B5" true "SUM(B2:B4)" 600.0 (functions/sum (eval-range "Sheet2!B2:B4")) 600.0]
- ["Sheet2!C4" true "BONUS * B4" 36.0 (* (eval-range "Sheet2!BONUS") (eval-range "Sheet2!B4")) 36.0]
- ["Sheet2!E6"
-  true
-  "SUM(B2:B4)-SUM(C2:C4)"
-  528.0
-  (- (functions/sum (eval-range "Sheet2!B2:B4")) (functions/sum (eval-range "Sheet2!C2:C4")))
-  528.0]
- ["Sheet2!C5" true "SUM(C2:C4)" 72.0 (functions/sum (eval-range "Sheet2!C2:C4")) 72.0]
- ["Sheet2!E4" true "SUM(B4:D4)" 340.0 (functions/sum (eval-range "Sheet2!B4:D4")) 340.0]
- ["Sheet2!D5" true "SUM(D2:D4)" 15.0 (functions/sum (eval-range "Sheet2!D2:D4")) 15.0]
- ["Sheet2!E2" true "SUM(B2:D2)" 118.0 (functions/sum (eval-range "Sheet2!B2:D2")) 118.0]
- ["Sheet2!E5" true "SUM(E2:E4)" 687.0 (functions/sum (eval-range "Sheet2!E2:E4")) 687.0]
- ["Sheet2!B11"
-  true
-  "IF(E5<ALLOWEDTOTAL,\"YES\",\"NO\")"
-  "YES"
-  (if (< (eval-range "Sheet2!E5") (eval-range "Sheet2!ALLOWEDTOTAL")) (str "YES") (str "NO"))
-  "YES"]]
-```
+[["Sheet2!D6" true "YEARFRAC(PREPDATE,B6,3)" 0.9917808219178083 (functions/fn-yearfrac (eval-range "Sheet2!PREPDATE") (eval-range "Sheet2!B6") 3.0) 0.9917808219178083] 
+   ["Sheet2!H4" true "BONUS * G4" 12.0 (* (eval-range "Sheet2!BONUS") (eval-range "Sheet2!G4")) 12.0] 
+   ["Sheet2!J4" true "SUM(G4:I4)" 118.0 (functions/sum (eval-range "Sheet2!G4:I4")) 118.0] 
+   ["Sheet2!H6" true "BONUS * G6" 36.0 (* (eval-range "Sheet2!BONUS") (eval-range "Sheet2!G6")) 36.0] 
+   ["Sheet2!I7" true "SUM(I4:I6)" 15.0 (functions/sum (eval-range "Sheet2!I4:I6")) 15.0] 
+   ["Sheet2!B11" true "COUNTA(EMPLOYEES)" 3.0 (functions/fn-counta (eval-range "Sheet2!EMPLOYEES")) 3.0] 
+   ["Sheet2!H5" true "BONUS * G5" 24.0 (* (eval-range "Sheet2!BONUS") (eval-range "Sheet2!G5")) 24.0] 
+   ["Sheet2!H8" true "SUM(G4:G6)-SUM(H4:H6)" 528.0 (- (functions/sum (eval-range "Sheet2!G4:G6")) (functions/sum (eval-range "Sheet2!H4:H6"))) 528.0] 
+   ["Sheet2!H7" true "SUM(H4:H6)" 72.0 (functions/sum (eval-range "Sheet2!H4:H6")) 72.0] 
+   ["Sheet2!J5" true "SUM(G5:I5)" 229.0 (functions/sum (eval-range "Sheet2!G5:I5")) 229.0] 
+   ["Sheet2!G7" true "SUM(G4:G6)" 600.0 (functions/sum (eval-range "Sheet2!G4:G6")) 600.0] 
+   ["Sheet2!J6" true "SUM(G6:I6)" 340.0 (functions/sum (eval-range "Sheet2!G6:I6")) 340.0] 
+   ["Sheet2!B15" true "SUMIF(J4:J6,\">200\")" 569.0 (functions/fn-sumif (eval-range "Sheet2!J4:J6") (str ">200")) 569.0] 
+   ["Sheet2!J7" true "SUM(J4:J6)" 687.0 (functions/sum (eval-range "Sheet2!J4:J6")) 687.0] 
+   ["Sheet2!B14" true "IF(J7<ALLOWEDTOTAL,\"YES\",\"NO\")" "YES" (if (< (eval-range "Sheet2!J7") (eval-range "Sheet2!ALLOWEDTOTAL")) (str "YES") (str "NO")) "YES"] 
+   ["Sheet2!C6" true "_xlfn.DAYS(PREPDATE,B6)" 362.0 (functions/fn-days (eval-range "Sheet2!PREPDATE") (eval-range "Sheet2!B6")) 362.0] 
+   ["Sheet2!B17" true "SUMIF(E4:E6,B12,J4:J6)" 229.0 (functions/fn-sumif (eval-range "Sheet2!E4:E6") (eval-range "Sheet2!B12") (eval-range "Sheet2!J4:J6")) 229.0] 
+   ["Sheet2!D5" true "YEARFRAC(PREPDATE,B5,1)" 1.1600547195622435 (functions/fn-yearfrac (eval-range "Sheet2!PREPDATE") (eval-range "Sheet2!B5") 1.0) 1.1600547195622435] 
+   ["Sheet2!C5" true "_xlfn.DAYS(PREPDATE,B5)" 424.0 (functions/fn-days (eval-range "Sheet2!PREPDATE") (eval-range "Sheet2!B5")) 424.0] 
+   ["Sheet2!B16" true "SUMIF(J4:J6,\">\" & J4)" 569.0 (functions/fn-sumif (eval-range "Sheet2!J4:J6") (str (str ">") (eval-range "Sheet2!J4"))) 569.0] 
+   ["Sheet2!B18" true "SUMIF(E4:E6,\"L*\",J4:J6)" 687.0 (functions/fn-sumif (eval-range "Sheet2!E4:E6") (str "L*") (eval-range "Sheet2!J4:J6")) 687.0] 
+   ["Sheet2!F6" true "VLOOKUP(E6,$L$4:$N$6,2)" 0.3 (functions/fn-vlookup (eval-range "Sheet2!E6") (eval-range "Sheet2!$L$4:$N$6") 2.0) 0.3] 
+   ["Sheet2!F5" true "VLOOKUP(E5,$L$4:$N$6,2)" 0.1 (functions/fn-vlookup (eval-range "Sheet2!E5") (eval-range "Sheet2!$L$4:$N$6") 2.0) 0.1] 
+   ["Sheet2!F4" true "VLOOKUP(E4,$L$4:$N$6,2)" 0.2 (functions/fn-vlookup (eval-range "Sheet2!E4") (eval-range "Sheet2!$L$4:$N$6") 2.0) 0.2] 
+   ["Sheet2!D4" true "YEARFRAC(PREPDATE,B4)" 3.661111111111111 (functions/fn-yearfrac (eval-range "Sheet2!PREPDATE") (eval-range "Sheet2!B4")) 3.661111111111111] 
+   ["Sheet2!C4" true "_xlfn.DAYS(PREPDATE,B4)" 1336.0 (functions/fn-days (eval-range "Sheet2!PREPDATE") (eval-range "Sheet2!B4")) 1336.0]]
+   ```
 
 If we want to check that the Clojure results match the results returned by Excel, we can run
 
@@ -390,26 +353,23 @@ If we want to check that the Clojure results match the results returned by Excel
   (keep (fn [[cell-label match? cell-formula cell-value cell-code calculated-value :as calc]]
           (when-not match?
             calc))
-        (recalc-workbook WB-MAP "Sheet2"))
+        (graph/recalc-workbook WB-MAP "Sheet2"))
 ```
 
 and expect to get an empty list `'()` returned.
 
 ## Future Work
 
-Obviously, now that we can calculate a workbook, it would be nice to be able to update input cell
-values and then recalculate those portions of the workbook that are effected, i.e. those cells
-whose value are at some level dependent on the updated cell.
+Obviously, now that we can calculate a workbook, it would be nice to be able to update input cell values and then recalculate those portions of the workbook that are effected, i.e. those cells whose value are at some level dependent on the updated cell.
 
 ```clojure
-(get-recalc-node-sequence "Sheet2!A2" WB-MAP)
+(graph/get-recalc-node-sequence "Sheet2!B1" WB-MAP)
 ```
 
-will return a list of cells, in the correct order, that should be recalculated when the A2 cell on 
-Sheet2 is updated
+will return a list of cells, in the correct order, that should be recalculated when the B1 cell on Sheet2 is updated
 
 ```clojure
-'("Sheet2!A2" "Sheet2!B9")
+'("Sheet2!B1" "Sheet2!C5" "Sheet2!D6" "Sheet2!C6" "Sheet2!D4" "Sheet2!C4" "Sheet2!D5")
 ```
 
 

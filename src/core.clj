@@ -234,3 +234,57 @@
   (run-tests)
 
   :end)
+  
+(comment 
+  ; README code
+
+  {:vlaaad.reveal/command '(clear-output)}
+  
+  (-> "=1+2"
+      (parse/parse-to-tokens))
+  
+  (-> "=max(1,2)*$A$4"
+      (parse/parse-to-tokens))
+  
+  (-> "=max(1,2)*$A$4"
+      (parse/parse-to-tokens)
+      (parse/nest-ast))
+  
+  (-> "=max(1,2)*$A$4"
+      (parse/parse-to-tokens)
+      (parse/nest-ast)
+      (parse/wrap-ast)
+      (ast/process-tree)
+      (sh/parse-expression-tokens)
+      (ast/unroll-for-code-form "Sheet1"))
+  
+  (->> (run-tests)
+       (filter #(false? (:ok? %))))
+  
+  (graph/explain-workbook "TEST1.xlsx" "Sheet2")
+
+  (def WB-MAP
+    (-> "TEST1.xlsx"
+        (graph/explain-workbook "Sheet2")
+        (graph/get-cell-dependencies)
+        (graph/add-graph)
+        (graph/connect-disconnected-regions)))
+  
+  (graph/expand-cell-range "Sheet2!B3:D3" WB-MAP)
+
+  (graph/expand-cell-range "Sheet2!BONUS" WB-MAP)
+
+  (graph/eval-range "Sheet2!H4:H6" WB-MAP)
+
+  (graph/eval-range "Sheet2!$L$4:$N$6" WB-MAP)
+
+  (graph/recalc-workbook WB-MAP "Sheet2")
+
+  (keep (fn [[cell-label match? cell-formula cell-value cell-code calculated-value :as calc]]
+          (when-not match?
+            calc))
+        (graph/recalc-workbook WB-MAP "Sheet2"))
+  
+  (graph/get-recalc-node-sequence "Sheet2!B1" WB-MAP)
+
+  :end)
