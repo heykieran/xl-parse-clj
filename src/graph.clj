@@ -1,6 +1,7 @@
 (ns graph
   (:require
    [clojure.string :as str]
+   [clojure.java.io :as io]
    [ubergraph.core :as uber]
    [ubergraph.alg :as alg]
    [dk.ative.docjure.spreadsheet :as dk]
@@ -8,6 +9,7 @@
    [excel :as excel]
    [ast-processing :as ast]
    [shunting :as sh]
+   [functions]
    [clojure.walk :as walk])
   (:import
    [org.apache.poi.ss SpreadsheetVersion]
@@ -132,11 +134,11 @@
    (let [wb-as-resource (dk/load-workbook-from-resource wb-name)
          sheet-names (->> wb-as-resource
                           (dk/sheet-seq)
-                          (keep (fn [xl-sheet] 
-                                 (let [s-name (.getSheetName xl-sheet)]
-                                   (when (or (nil? sheet-name)
-                                             (= s-name sheet-name))
-                                     s-name)))))]
+                          (keep (fn [xl-sheet]
+                                  (let [s-name (.getSheetName xl-sheet)]
+                                    (when (or (nil? sheet-name)
+                                              (= s-name sheet-name))
+                                      s-name)))))]
      (reduce
       (fn [accum sheet-name]
         (assoc accum sheet-name
@@ -154,8 +156,8 @@
   [{:keys [cells] :as wb-sheet-map}]
   (-> wb-sheet-map
       (assoc :dependencies
-             (reduce (fn [accum {cell-sheet :sheet cell-label :label 
-                                 cell-formula :formula cell-references :references 
+             (reduce (fn [accum {cell-sheet :sheet cell-label :label
+                                 cell-formula :formula cell-references :references
                                  :as cell-map}]
                        (if cell-references
                          (concat
@@ -168,7 +170,7 @@
                      []
                      cells))))
 
-(defn get-cell-dependencies 
+(defn get-cell-dependencies
   [wb-map]
   (reduce
    (fn [accum [sheet-name wb-sheet-map]]
@@ -212,10 +214,8 @@
   [wb-map-with-dependencies]
   (reduce (fn [accum [sheet-name wb-map-with-dependencies]]
             (let [x (add-self-dependencies-for-sheet wb-map-with-dependencies)]
-              (tap> {:loc add-self-dependencies
-                      :x x})
               (assoc-in accum [sheet-name :dependencies]
-                     x)))
+                        x)))
           wb-map-with-dependencies
           wb-map-with-dependencies))
 
@@ -245,26 +245,27 @@
                     include-all-formula-cells?
                     (add-self-dependencies)
                     true
-                    (consolidate-dependencies-across-sheets))
-                  #_(if include-all-formula-cells?
-                    (add-self-dependencies-for-sheet wb-map-with-dependencies)
-                    (consolidate-dependencies-across-sheets wb-map-with-dependencies))))))
+                    (consolidate-dependencies-across-sheets))))))
 
-(defn connect-disconnected-regions 
+(defn connect-disconnected-regions
   [{graph :graph :as wb-map-with-graph}]
-  (let 
+  (let
    [sheet-root-node-labels (keep (fn [sheet-name]
                                    (when (string? sheet-name)
-                                     (str sheet-name "!$$ROOT")))
+                                     [sheet-name (str sheet-name "!$$ROOT")]))
                                  (->> wb-map-with-graph
                                       (keys)))
     graph-with-roots (reduce
-                      (fn [g sheet-root-node-label]
-                        (-> g 
-                            (uber/add-nodes-with-attrs [sheet-root-node-label {}])
+                      (fn [g [sheet-name sheet-root-node-label]]
+                        (-> g
+                            (uber/add-nodes-with-attrs
+                             [sheet-root-node-label
+                              {:label "$$ROOT" :sheet sheet-name :type :root}])
                             (uber/add-edges ["ROOT!$$ROOT" sheet-root-node-label])))
                       (-> graph
-                          (uber/add-nodes-with-attrs ["ROOT!$$ROOT" {}]))
+                          (uber/add-nodes-with-attrs
+                           ["ROOT!$$ROOT"
+                            {:label "$$ROOT" :sheet "ROOT" :type :root}]))
                       sheet-root-node-labels)]
     (->> (uber/nodes graph-with-roots)
          (reduce
@@ -322,7 +323,7 @@
                   (first interim-result)
                   :else
                   interim-result)))
-         ((fn[interim-result]
+         ((fn [interim-result]
             (if (instance? clojure.lang.IObj interim-result)
               (with-meta interim-result range-metadata)
               interim-result))))))
@@ -332,10 +333,10 @@
   ;; with a pure 'graph/eval-range.
   (walk/postwalk
    (fn [form]
-     (if (and (list? form) 
+     (if (and (list? form)
               (= 'eval-range (first form)))
-       (let [e (concat 
-                (cons (ns-resolve 'graph (first form)) (rest form)) 
+       (let [e (concat
+                (cons (ns-resolve 'graph (first form)) (rest form))
                 (list `*context*))]
          `(~@e))
        form))
@@ -371,6 +372,18 @@
            []
            (alg/topsort graph))))
 
+(defn simplify-results
+  [recalc-results]
+  (->> recalc-results
+       (mapv
+        (fn [[cell-name vals-match? formula-text
+              excel-value clj-code calc-value]]
+          {:cell cell-name
+           :formula formula-text
+           :clj-code clj-code
+           :excel-value excel-value
+           :clj-value calc-value}))))
+
 (comment
 
   {:vlaaad.reveal/command '(clear-output)}
@@ -381,7 +394,7 @@
   (-> "TEST-cyclic.xlsx"
       (explain-workbook "Sheet1")
       (get-cell-dependencies))
-  
+
   (-> "TEST-cyclic.xlsx"
       (explain-workbook "Sheet1")
       (get-cell-dependencies)
@@ -391,32 +404,50 @@
       (explain-workbook "Sheet1")
       (get-cell-dependencies)
       (add-graph false))
-  
-    (-> "TEST-cyclic.xlsx"
-        (explain-workbook "Sheet1")
-        (get-cell-dependencies)
-        (add-graph)
-        (connect-disconnected-regions)
-        (:graph)
-        (uber/viz-graph))
 
+  (-> "TEST-cyclic.xlsx"
+      (explain-workbook "Sheet1")
+      (get-cell-dependencies)
+      (add-graph)
+      (connect-disconnected-regions)
+      (:graph)
+      (uber/viz-graph))
+
+  (-> "SIMPLE-1.xlsx"
+      (explain-workbook)
+      (get-cell-dependencies)
+      (add-graph)
+      (connect-disconnected-regions)
+      (:graph)
+      (uber/viz-graph {:save {:filename "./assets/DAG3.png"
+                              :format :png}
+                       :auto-label true}))
+
+  (-> "SIMPLE-1.xlsx"
+      (explain-workbook)
+      (get-cell-dependencies)
+      (add-graph)
+      (connect-disconnected-regions)
+      (recalc-workbook "Scores")
+      (simplify-results))
+  
   (def WB-MAP
     (-> "TEST-cyclic.xlsx"
         (explain-workbook "Sheet1")
         (get-cell-dependencies)
         (add-graph)
         (connect-disconnected-regions)))
-  
+
   (uber/viz-graph (:graph WB-MAP))
 
   (ubergraph.alg/connected-components (:graph WB-MAP))
-  
+
   (uber/in-degree (:graph WB-MAP) "Sheet1!C1")
   (uber/edges (:graph WB-MAP))
   (uber/nodes (:graph WB-MAP))
   (ubergraph.alg/shortest-path (:graph WB-MAP) {:start-node "Sheet1!B1"})
-  (map (partial uber/edge-with-attrs 
-                (:graph WB-MAP)) 
+  (map (partial uber/edge-with-attrs
+                (:graph WB-MAP))
        (uber/edges (:graph WB-MAP)))
   (ubergraph.alg/scc (:graph WB-MAP))
   (uber/node-with-attrs (:graph WB-MAP) "Sheet1!B4")
@@ -451,7 +482,7 @@
     (eval-range "Sheet2!EMPLOYEES" *context*))
 
   (alg/topsort (:graph WB-MAP))
-  
+
   (recalc-workbook WB-MAP "Sheet3")
 
   (keep (fn [[cell-label match? cell-formula cell-value cell-code calculated-value :as calc]]
@@ -486,7 +517,7 @@
   (reduce (fn [accum node]
             (conj
              accum
-             (let [[node {:keys [formula value] :as attrs}] 
+             (let [[node {:keys [formula value] :as attrs}]
                    (uber/node-with-attrs G node)]
                [node formula value])))
           []

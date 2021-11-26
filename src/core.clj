@@ -59,6 +59,7 @@
           (graph/explain-workbook workbook-name worksheet-name)
           (graph/get-cell-dependencies)
           (graph/add-graph)
+          (graph/connect-disconnected-regions)
           (graph/recalc-workbook worksheet-name)))))
 
 (comment

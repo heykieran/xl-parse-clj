@@ -60,6 +60,12 @@
 (defn sum [& vs]
   (apply + (flatten vs)))
 
+(defn fn-max [& vs]
+  (apply max (flatten vs)))
+
+(defn fn-min [& vs]
+  (apply min (flatten vs)))
+
 (defn fn-count [& vs]
   (count (keep #(when (number? %) %) vs)))
 
