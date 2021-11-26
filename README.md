@@ -230,21 +230,18 @@ In order to *"break out"* a sheet for a workbook you can run
 
 Once we have this information we can begin the process of converting it to a DAG. 
 
-First, we use `graph/get-cell-dependencies` to augment the map returned by `explain-workbook` with a `:dependencies` key where its value is a vector of 2-tuples where the first value in the tuple is a cell and the 
-second value is the cells on which it depends.
+First, we use `graph/get-cell-dependencies` to augment the map returned by `explain-workbook` with a `:dependencies` key where its value is a vector of 2-tuples where the first value in the tuple is a cell and the second value is the cells on which it depends.
 
-We follow this with a call to `graph/add-graph` which uses the `:dependencies` key to construct the DAG. The
-graph is added to the workbook map as a `:map` entry.
+We follow this with a call to `graph/add-graph` which uses the `:dependencies` key to construct the DAG. The graph is added to the workbook map as a `:map` entry.
 
-If you have graphviz installed you can inspect the DAG produced by the test workbook's second worksheet
-as follows
+If you have graphviz installed, you can inspect the DAG produced from a slightly simpler version of the test workbook's second worksheet (called `INITIAL-TEST.xlsx`) as follows:
 
 ```clojure
-(-> "TEST1.xlsx"
+(-> "INITIAL-TEST.xlsx"
     (explain-workbook "Sheet2")
     (get-cell-dependencies)
-    (connect-disconnected-regions)
     (add-graph)
+    (connect-disconnected-regions)
     :graph
     (uber/viz-graph))
 ```
