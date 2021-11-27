@@ -33,17 +33,20 @@
    {:name :max :s "max" :f 'functions/fn-max :c :args :a :all :e [:Function :Start]}
    {:name :min :s "min" :f 'functions/fn-min :c :args :a :all :e [:Function :Start]}
    {:name :pi :s "pi" :f 'functions/pi :c :args :a 0 :e [:Function :Start]}
-   {:name :sum :s "sum" :f 'functions/sum :c :args :a :all :e [:Function :Start]}
-   {:name :average :s "average" :f 'functions/average :c :args :a :all :e [:Function :Start]}
+   {:name :sum :s "sum" :f 'functions/fn-sum :c :args :a :all :e [:Function :Start]}
+   {:name :sumif :s "sumif" :f 'functions/fn-sumif :c :args :a :all :e [:Function :Start]}
+   {:name :average :s "average" :f 'functions/fn-average :c :args :a :all :e [:Function :Start]}
+   {:name :averageif :s "averageif" :f 'functions/fn-average-if :c :args :a :all :e [:Function :Start]}
    {:name :count :s "count" :f 'functions/fn-count :c :args :a :all :e [:Function :Start]}
+   {:name :countif :s "countif" :f 'functions/fn-count-if :c :args :a :all :e [:Function :Start]}
    {:name :counta :s "counta" :f 'functions/fn-counta :c :args :a :all :e [:Function :Start]}
+   {:name :concatenate :s "concatenate" :f 'functions/fn-concatenate :c :args :a :all :e [:Function :Start]}
    {:name :now :s "now" :f 'functions/fn-now :c :args :a 0 :e [:Function :Start]}
    {:name :date :s "date" :f 'functions/fn-date :c :args :a :all :e [:Function :Start]}
    {:name :days :ext true :s "_xlfn.days" :f 'functions/fn-days :c :args :a :all :e [:Function :Start]}
    {:name :datevalue :s "datevalue" :f 'functions/fn-datevalue :c :args :a 1 :e [:Function :Start]}
    {:name :yearfrac :s "yearfrac" :f 'functions/fn-yearfrac :c :args :a :all :e [:Function :Start]}
    {:name :vlookup :s "vlookup" :f 'functions/fn-vlookup :c :args :a :all :e [:Function :Start]}
-   {:name :sumif :s "sumif" :f 'functions/fn-sumif :c :args :a :all :e [:Function :Start]}
 
    {:name :if :s "if" :f 'if :c :args :a 3 :e [:Function :Start]}])
 

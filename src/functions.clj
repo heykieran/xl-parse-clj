@@ -68,8 +68,28 @@
       (-> i (inc) (int))
       excel/VALUE-ERROR)))
 
-(defn sum [& vs]
+(defn fn-sum [& vs]
   (apply + (flatten vs)))
+
+(defn- wrap-if [base-fn]
+  (fn [search-range criteria sum-range]
+    (let [expr-code (-> criteria
+                      (expressions/recast-comparative-expression)
+                      (expressions/->code)
+                      (expressions/code->with-regex))
+        filtered-range (expressions/reduce-by-comp-expression expr-code search-range sum-range)]
+    (tap> {:loc base-fn
+           :search-range search-range
+           :sum-range sum-range
+           :criteria criteria
+           :recast (expressions/recast-comparative-expression criteria)
+           :code expr-code
+           :f-range filtered-range
+           :result (apply base-fn filtered-range)})
+    (apply base-fn filtered-range))))
+
+(defn fn-sumif [& [search-range criteria sum-range]]
+  ((wrap-if fn-sum) search-range criteria sum-range))
 
 (defn fn-max [& vs]
   (apply max (flatten vs)))
@@ -80,14 +100,24 @@
 (defn fn-count [& vs]
   (count (keep #(when (number? %) %) vs)))
 
+(defn fn-count-if [& [search-range criteria sum-range]]
+  ((wrap-if fn-count) search-range criteria sum-range))
+
 (defn fn-counta [& vs]
   (-> (keep #(when (not (str/blank? (str %))) %) (flatten vs))
       (count)
       (float)))
 
-(defn average [& vs]
-  (/ (apply sum vs)
-     (apply fn-count vs)))
+(defn fn-average [& vs]
+  (let [c-vs (flatten vs)]
+    (/ (apply fn-sum c-vs)
+       (apply fn-count c-vs))))
+
+(defn fn-average-if [& [search-range criteria sum-range]]
+  ((wrap-if fn-average) search-range criteria sum-range))
+
+(defn fn-concatenate [& vs]
+  (apply str (flatten vs)))
 
 (defn fn-now []
   (excel/excel-now))
@@ -155,22 +185,6 @@
            :table-array (convert-vector-to-table table-array-as-vector)
            :return r-val})
     r-val))
-
-(defn fn-sumif [& [search-range criteria sum-range]]
-  (let [expr-code (-> criteria
-                      (expressions/recast-comparative-expression)
-                      (expressions/->code)
-                      (expressions/code->with-regex))
-        filtered-range (expressions/reduce-by-comp-expression expr-code search-range sum-range)]
-    (tap> {:loc fn-sumif
-           :search-range search-range
-           :sum-range sum-range
-           :criteria criteria
-           :recast (expressions/recast-comparative-expression criteria)
-           :code expr-code
-           :f-range filtered-range
-           :result (apply + filtered-range)})
-    (apply + filtered-range)))
 
 (comment
   (abs -10)

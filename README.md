@@ -96,15 +96,15 @@ which maps the excel formula symbol `"max"` to the clojure symbol `fn-max`, whic
 The `average` function is defined as follows
 
 ```clojure
-{:name :average :s "average" :f 'functions/average :c :args :a :all :e [:Function :Start}
+{:name :average :s "average" :f 'functions/fn-average :c :args :a :all :e [:Function :Start}
 ```
 
-which maps the excel formula symbol `"average"` to the clojure `functions/average` symbol that is defined in the `functions` namespace.
+which maps the excel formula symbol `"average"` to the clojure `functions/fn-average` symbol that is defined in the `functions` namespace.
 
 The order of the definitions in the `OPERATORS-PRECEDENCE` vector also determines the precedence of the operators when being processed by the shunting-yard algorithm. Furthermore, the `:a` field in the definition lets the parser know how many arguments to expect.
 
 > As of this writing all Excel's mathematical and logical operators have been implemented, as well as the following functions `abs`, `sin`, `true`, `false`, `and`, `or`, `max`, `min`, `pi`, `now`, `date`, `days`, `datevalue`, `yearfrac`,
-  `sum`, `average`, `count`, `counta`, `sumif`, `vlookup` & `if`. Others will be added as necessary.
+  `sum`, `average`, `count`, `counta`, `sumif`, `averageif`, `countif`, `search`, `concatenate`, `vlookup` & `if`. Others will be added as time allows.
   
 As an example 
 
