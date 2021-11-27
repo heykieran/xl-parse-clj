@@ -29,13 +29,14 @@
    {:name :and :s "and" :f 'functions/fn-and :c :args :a :all :e [:Function :Start]}
    {:name :or :s "or" :f 'functions/fn-or :c :args :a :all :e [:Function :Start]}
    {:name :not :s "not" :f 'functions/fn-not :c :args :a 1 :e [:Function :Start]}
+   {:name :search :s "search" :f 'functions/fn-search :c :args :a 3 :e [:Function :Start]}
    {:name :max :s "max" :f 'functions/fn-max :c :args :a :all :e [:Function :Start]}
    {:name :min :s "min" :f 'functions/fn-min :c :args :a :all :e [:Function :Start]}
    {:name :pi :s "pi" :f 'functions/pi :c :args :a 0 :e [:Function :Start]}
    {:name :sum :s "sum" :f 'functions/sum :c :args :a :all :e [:Function :Start]}
    {:name :average :s "average" :f 'functions/average :c :args :a :all :e [:Function :Start]}
    {:name :count :s "count" :f 'functions/fn-count :c :args :a :all :e [:Function :Start]}
-   {:name :count :s "counta" :f 'functions/fn-counta :c :args :a :all :e [:Function :Start]}
+   {:name :counta :s "counta" :f 'functions/fn-counta :c :args :a :all :e [:Function :Start]}
    {:name :now :s "now" :f 'functions/fn-now :c :args :a 0 :e [:Function :Start]}
    {:name :date :s "date" :f 'functions/fn-date :c :args :a :all :e [:Function :Start]}
    {:name :days :ext true :s "_xlfn.days" :f 'functions/fn-days :c :args :a :all :e [:Function :Start]}

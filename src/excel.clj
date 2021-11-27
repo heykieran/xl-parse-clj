@@ -11,6 +11,8 @@
    [org.apache.poi.util LocaleUtil]
    [org.apache.poi.ss.usermodel CellType DateUtil]))
 
+(def VALUE-ERROR "#VALUE!")
+
 (def PATTERNS
   [[:YMD-DASHES {:r #"^(\d{4})-(\w+)-(\d{1,2})( .*)?$", :s "ymd" :m-type :num}]
    [:DMY-DASHES {:r #"^(\d{1,2})-(\w+)-(\d{4})( .*)?$", :s "dmy" :m-type :num}]

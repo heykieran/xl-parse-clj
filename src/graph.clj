@@ -357,18 +357,18 @@
    a graph is available and that it's acyclic. If it's not acyclic
    this function will return no results. Don't supply a graph
    that's not a DAG"
-  ([{:keys [graph] :as wb-map} sheet-name]
+  ([{:keys [graph] :as wb-map} & [sheet-name]]
    (reduce (fn [accum node]
              (let [[node {:keys [sheet formula value] :as attrs}]
                    (uber/node-with-attrs graph node)]
-               (if formula
+               (if (and formula (if sheet-name (= sheet-name sheet) true))
                  (let [formula-code (-> (str "=" formula)
                                         (parse/parse-to-tokens)
                                         (parse/nest-ast)
                                         (parse/wrap-ast)
                                         (ast/process-tree)
                                         (sh/parse-expression-tokens)
-                                        (ast/unroll-for-code-form sheet-name))
+                                        (ast/unroll-for-code-form sheet))
                        calculated-result (binding [*context* wb-map]
                                            (-> formula-code
                                                (substitute-ranges)

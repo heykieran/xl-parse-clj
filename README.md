@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This is an evolving proof of concept to convert a non-trivial, but not overly complicated, Excel workbook to Clojure code. It is at a very early stage, and I've, as yet, made no effort to clean it up and turn it into a library. I'm making it available as is. If it's useful to you, that's great, but please realize that there's a long way to go before it is any more than marginally useful.
+This is an evolving proof of concept to convert a non-trivial, but not overly complicated, Excel workbook to Clojure code. It is at a very early stage, and I've, as yet, made no effort to clean it up and turn it into a library. I'm making it available as is. If it's useful to you, that's great, but please realize that there's a long way to go before it is anything more than marginally useful.
 
 Over time, as that time becomes available to me, I'll expand it and refine it, but I make no committment as to when that will be. Also, I've given little consideration to performance or even catching exceptions in a sensible way. That's work for a later time.
 

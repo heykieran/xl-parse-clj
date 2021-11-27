@@ -57,6 +57,17 @@
 (defn pi []
   (Math/PI))
 
+(defn fn-search [look-for-str in-str & [starting-at]]
+  (cond
+    (and starting-at ((complement number?) starting-at))
+    excel/VALUE-ERROR
+    (and starting-at ((complement pos?) starting-at))
+    excel/VALUE-ERROR
+    :else
+    (if-let [i (str/index-of in-str look-for-str (or (some-> starting-at dec) 0))]
+      (-> i (inc) (int))
+      excel/VALUE-ERROR)))
+
 (defn sum [& vs]
   (apply + (flatten vs)))
 
