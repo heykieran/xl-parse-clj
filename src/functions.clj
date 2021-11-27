@@ -78,7 +78,7 @@
                       (expressions/->code)
                       (expressions/code->with-regex))
         filtered-range (expressions/reduce-by-comp-expression expr-code search-range sum-range)]
-    (tap> {:loc base-fn
+    #_(tap> {:loc base-fn
            :search-range search-range
            :sum-range sum-range
            :criteria criteria
@@ -169,6 +169,15 @@
     (let [{:keys [single? column? cols rows]} meta-data]
       (partition cols array-as-vector))
     array-as-vector))
+
+(defn fn-index [& [lookup-range row-num col-num :as vs]]
+  (let [{:keys [rows cols]} (meta lookup-range)
+        r-offset (if (= 1 rows) 1 row-num)
+        c-offset (if (= 1 rows) row-num (or col-num 1))] 
+    (some-> lookup-range
+            (convert-vector-to-table)
+            (nth (dec r-offset) nil)
+            (nth  (dec c-offset) nil))))
 
 (defn fn-vlookup [& [lookup-value table-array-as-vector col-index range-lookup]]
   (let [table-array (convert-vector-to-table table-array-as-vector)
