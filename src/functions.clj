@@ -6,7 +6,8 @@
    [clojure.math.numeric-tower :as math])
   (:import 
    [java.time LocalDateTime]
-   [java.util Calendar Calendar$Builder]))
+   [java.util Calendar Calendar$Builder]
+   [org.apache.poi.ss.util CellReference]))
 
 (defn fn-equal 
   "Replacement for `=` to handle cases where
@@ -179,6 +180,15 @@
             (nth (dec r-offset) nil)
             (nth  (dec c-offset) nil))))
 
+(defn fn-index-reference [& [lookup-range row-num col-num :as vs]]
+  (let [{:keys [rows cols tl-coord]} (meta lookup-range)
+        [tl-row tl-col] tl-coord 
+        r-offset (if (= 1 rows) 1 row-num)
+        c-offset (if (= 1 rows) row-num (or col-num 1))]
+    (str
+     (CellReference/convertNumToColString (int (+ tl-col (dec c-offset))))
+     (int (+ (inc tl-row) (dec r-offset))))))
+
 (defn fn-vlookup [& [lookup-value table-array-as-vector col-index range-lookup]]
   (let [table-array (convert-vector-to-table table-array-as-vector)
         r-val (some
@@ -194,6 +204,9 @@
            :table-array (convert-vector-to-table table-array-as-vector)
            :return r-val})
     r-val))
+
+(defn fn-range [& [:as vs]]
+  vs)
 
 (comment
   (abs -10)

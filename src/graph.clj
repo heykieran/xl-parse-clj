@@ -282,12 +282,6 @@
           (fn [g n]
             (let [[cell-sheet cell-label] (str/split n #"\!")
                   id (uber/in-degree g n)]
-              (tap> {:loc connect-disconnected-regions
-                     :n n
-                     :id id
-                     :s cell-sheet
-                     :l cell-label
-                     :e (uber/find-edge g n n)})
               (if (and (not= n (str cell-sheet "!$$ROOT"))
                        (or
                         (= 0 id)

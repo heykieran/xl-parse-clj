@@ -22,6 +22,8 @@
    {:name :compare-lte :s "<=" :f '<= :c :infix :a 2 :e [:OperatorInfix :Logical]}
    {:name :compare-neq :s "<>" :f 'not= :c :infix :a 2 :e [:OperatorInfix :Logical]}
 
+   {:name :index :s "index" :f 'functions/fn-index :c :args :a :all :e [:Function :Start]}
+
    {:name :abs :s "abs" :f 'functions/abs :c :args :a 1 :e [:Function :Start]}
    {:name :sin :s "sin" :f 'Math/sin :c :args :a 1 :e [:Function :Start]}
    {:name :true :s "true" :f 'functions/fn-true :c :args :a 0 :e [:Function :Start]}
@@ -46,10 +48,11 @@
    {:name :days :ext true :s "_xlfn.days" :f 'functions/fn-days :c :args :a :all :e [:Function :Start]}
    {:name :datevalue :s "datevalue" :f 'functions/fn-datevalue :c :args :a 1 :e [:Function :Start]}
    {:name :yearfrac :s "yearfrac" :f 'functions/fn-yearfrac :c :args :a :all :e [:Function :Start]}
-   {:name :index :s "index" :f 'functions/fn-index :c :args :a :all :e [:Function :Start]}
    {:name :vlookup :s "vlookup" :f 'functions/fn-vlookup :c :args :a :all :e [:Function :Start]}
 
-   {:name :if :s "if" :f 'if :c :args :a 3 :e [:Function :Start]}])
+   {:name :if :s "if" :f 'if :c :args :a 3 :e [:Function :Start]}
+   
+   {:name :binary-colon :s ":" :f 'functions/fn-range :c :infix :a 2 :e [:OperatorInfix :Math]}])
 
 (defn =ci [a1 a2]
   (= (some-> a1 str/lower-case)

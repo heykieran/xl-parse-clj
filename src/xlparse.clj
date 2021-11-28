@@ -16,7 +16,7 @@
 (def ERROR-START \#)
 
 (def OPERATORS-SN #{\+ \-})
-(def OPERATORS-INFIX #{\+ \- \* \/ \^ \& \= \> \<})
+(def OPERATORS-INFIX #{\+ \- \* \/ \^ \& \= \> \< \:})
 (def OPERATORS-POSTFIX #{\%})
 
 (def ERRORS #{"#NULL!", "#DIV/0!", "#VALUE!", "#REF!", "#NAME?", "#NUM!", "#N/A"})
@@ -42,413 +42,413 @@
                       :else
                       (throw (IllegalArgumentException. (str "Input formula must start with '=' or '{'"))))]
     (loop [formula (seq formula)
-         tokens []
-         stack (list)
-         gathered-value ""
-         in-string? false
-         in-path? false
-         in-range? false
-         in-error? false]
-    (if-not (seq formula)
-      (if (> (count gathered-value) 0)
-        (conj tokens
-                  {:value gathered-value
-                   :type :Operand})
-        tokens)
-      (let [chr (first formula)]
-        (cond in-string?
-              (let [is-quote? (= QUOTE-DOUBLE chr)
-                    embedded-quote? (and
-                               (> (count formula) 2)
-                               (= QUOTE-DOUBLE (second formula)))]
-                (recur
-                 (if (and is-quote? embedded-quote?)
-                   (rest (rest formula))
-                   (rest formula))
-                 (if (and is-quote? (not embedded-quote?))
-                   (conj tokens {:value gathered-value
-                                       :type :Operand
-                                       :sub-type :Text})
-                   tokens)
-                 stack
-                 (if is-quote?
-                   (if embedded-quote?
-                     (str gathered-value QUOTE-DOUBLE)
-                     "")
-                   (str gathered-value chr))
-                 (if (and is-quote? (not embedded-quote?))
-                   false
-                   in-string?)
-                 in-path?
-                 in-range?
-                 in-error?))
+           tokens []
+           stack (list)
+           gathered-value ""
+           in-string? false
+           in-path? false
+           in-range? false
+           in-error? false]
+      (if-not (seq formula)
+        (if (> (count gathered-value) 0)
+          (conj tokens
+                {:value gathered-value
+                 :type :Operand})
+          tokens)
+        (let [chr (first formula)]
+          (cond in-string?
+                (let [is-quote? (= QUOTE-DOUBLE chr)
+                      embedded-quote? (and
+                                       (> (count formula) 2)
+                                       (= QUOTE-DOUBLE (second formula)))]
+                  (recur
+                   (if (and is-quote? embedded-quote?)
+                     (rest (rest formula))
+                     (rest formula))
+                   (if (and is-quote? (not embedded-quote?))
+                     (conj tokens {:value gathered-value
+                                   :type :Operand
+                                   :sub-type :Text})
+                     tokens)
+                   stack
+                   (if is-quote?
+                     (if embedded-quote?
+                       (str gathered-value QUOTE-DOUBLE)
+                       "")
+                     (str gathered-value chr))
+                   (if (and is-quote? (not embedded-quote?))
+                     false
+                     in-string?)
+                   in-path?
+                   in-range?
+                   in-error?))
 
-              in-path?
-              (let [is-single-quote? (= QUOTE-SINGLE chr)
-                    embedded-quote? (and
-                               (> (count formula) 2)
-                               (= QUOTE-SINGLE (second formula)))]
+                in-path?
+                (let [is-single-quote? (= QUOTE-SINGLE chr)
+                      embedded-quote? (and
+                                       (> (count formula) 2)
+                                       (= QUOTE-SINGLE (second formula)))]
+                  (recur
+                   (if (and is-single-quote? embedded-quote?)
+                     (rest (rest formula))
+                     (rest formula))
+                   tokens
+                   stack
+                   (if is-single-quote?
+                     (if embedded-quote?
+                       (str gathered-value QUOTE-SINGLE)
+                       gathered-value)
+                     (str gathered-value chr))
+                   in-string?
+                   (if (and is-single-quote? (not embedded-quote?))
+                     false
+                     in-path?)
+                   in-range?
+                   in-error?))
+
+                in-range?
                 (recur
-                 (if (and is-single-quote? embedded-quote?)
-                   (rest (rest formula))
-                   (rest formula))
+                 (rest formula)
                  tokens
                  stack
-                 (if is-single-quote?
-                   (if embedded-quote?
-                     (str gathered-value QUOTE-SINGLE)
-                     gathered-value)
-                   (str gathered-value chr))
+                 (str gathered-value chr)
                  in-string?
-                 (if (and is-single-quote? (not embedded-quote?))
-                   false
-                   in-path?)
-                 in-range?
-                 in-error?))
+                 in-path?
+                 (if (= BRACKET-CLOSE chr) false in-range?)
+                 in-error?)
 
-              in-range?
-              (recur
-               (rest formula)
-               tokens
-               stack
-               (str gathered-value chr)
-               in-string?
-               in-path?
-               (if (= BRACKET-CLOSE chr) false in-range?)
-               in-error?)
+                in-error?
+                (let [current-error-value (str gathered-value chr)
+                      error-token? (contains? ERRORS current-error-value)]
+                  (recur
+                   (rest formula)
+                   (cond->
+                    tokens
+                     error-token?
+                     (conj
+                      {:value current-error-value
+                       :type :Operand
+                       :sub-type :Error}))
+                   stack
+                   (if error-token? "" current-error-value)
+                   in-string?
+                   in-path?
+                   in-range?
+                   (if error-token? false in-error?)))
 
-              in-error?
-              (let [current-error-value (str gathered-value chr)
-                    error-token? (contains? ERRORS current-error-value)]
+                (and
+                 (contains? OPERATORS-SN chr)
+                 (> (count gathered-value) 0)
+                 (re-matches #"^[1-9]{1}(\.[0-9]+)?E{1}$" gathered-value))
                 (recur
                  (rest formula)
-                 (cond->
-                  tokens
-                   error-token?
-                   (conj
-                    {:value current-error-value
-                     :type :Operand
-                     :sub-type :Error}))
+                 tokens
                  stack
-                 (if error-token? "" current-error-value)
+                 (str gathered-value chr)
                  in-string?
                  in-path?
                  in-range?
-                 (if error-token? false in-error?)))
+                 in-error?)
 
-              (and
-               (contains? OPERATORS-SN chr)
-               (> (count gathered-value) 0)
-               (re-matches #"^[1-9]{1}(\.[0-9]+)?E{1}$" gathered-value))
-              (recur
-               (rest formula)
-               tokens
-               stack
-               (str gathered-value chr)
-               in-string?
-               in-path?
-               in-range?
-               in-error?)
-
-              (= QUOTE-DOUBLE chr)
-              (recur
-               (rest formula)
-               (cond-> tokens
-                 (> (count gathered-value) 0)
-                 (conj
-                  {:value ""
-                   :type :Unknown}))
-               stack
-               gathered-value
-               true ; in-string
-               in-path?
-               in-range?
-               in-error?)
-
-              (= QUOTE-SINGLE chr)
-              (recur
-               (rest formula)
-               (cond-> tokens
-                 (> (count gathered-value) 0)
-                 (conj
-                  {:value ""
-                   :type :Unknown}))
-               stack
-               gathered-value
-               in-string?
-               true ; in-path
-               in-range?
-               in-error?)
-
-              (= BRACKET-OPEN chr)
-              (recur
-               (rest formula)
-               tokens
-               stack
-               (str gathered-value BRACKET-OPEN)
-               in-string?
-               in-path?
-               true
-               in-error?)
-
-              (= ERROR-START chr)
-              (recur
-               (rest formula)
-               (cond-> tokens
-                 (> (count gathered-value) 0)
-                 (conj
-                  {:value ""
-                   :type :Unknown}))
-               stack
-               (if (> (count gathered-value) 0)
-                 ""
-                 (str gathered-value ERROR-START))
-               in-string?
-               in-path?
-               in-range?
-               true)
-
-              (= BRACE-OPEN chr)
-              (let
-               [value? (> (count gathered-value) 0)
-                array-token {:value "ARRAY"
-                             :type :Function
-                             :sub-type :Start}
-                array-row-token {:value "ARRAYROW"
-                                 :type :Function
-                                 :sub-type :Start}]
+                (= QUOTE-DOUBLE chr)
                 (recur
                  (rest formula)
+                 (cond-> tokens
+                   (> (count gathered-value) 0)
+                   (conj
+                    {:value ""
+                     :type :Unknown}))
+                 stack
+                 gathered-value
+                 true ; in-string
+                 in-path?
+                 in-range?
+                 in-error?)
+
+                (= QUOTE-SINGLE chr)
+                (recur
+                 (rest formula)
+                 (cond-> tokens
+                   (> (count gathered-value) 0)
+                   (conj
+                    {:value ""
+                     :type :Unknown}))
+                 stack
+                 gathered-value
+                 in-string?
+                 true ; in-path
+                 in-range?
+                 in-error?)
+
+                (= BRACKET-OPEN chr)
+                (recur
+                 (rest formula)
+                 tokens
+                 stack
+                 (str gathered-value BRACKET-OPEN)
+                 in-string?
+                 in-path?
+                 true
+                 in-error?)
+
+                (= ERROR-START chr)
+                (recur
+                 (rest formula)
+                 (cond-> tokens
+                   (> (count gathered-value) 0)
+                   (conj
+                    {:value ""
+                     :type :Unknown}))
+                 stack
+                 (if (> (count gathered-value) 0)
+                   ""
+                   (str gathered-value ERROR-START))
+                 in-string?
+                 in-path?
+                 in-range?
+                 true)
+
+                (= BRACE-OPEN chr)
+                (let
+                 [value? (> (count gathered-value) 0)
+                  array-token {:value "ARRAY"
+                               :type :Function
+                               :sub-type :Start}
+                  array-row-token {:value "ARRAYROW"
+                                   :type :Function
+                                   :sub-type :Start}]
+                  (recur
+                   (rest formula)
+                   (cond->
+                    tokens
+                     value?
+                     (conj
+                      {:value gathered-value
+                       :type :Unknown})
+                     true
+                     (conj
+                      array-token)
+                     true
+                     (conj
+                      array-row-token))
+                   (conj stack array-token array-row-token)
+                   (if value? "" gathered-value)
+                   in-string?
+                   in-path?
+                   in-range?
+                   in-error?))
+
+                (= SEMICOLON chr)
+                (let [value? (> (count gathered-value) 0)
+                      array-row-token {:value "ARRAYROW"
+                                       :type :Function
+                                       :sub-type :Start}]
+                  (recur
+                   (rest formula)
+                   (cond-> tokens
+                     value?
+                     (conj
+                      {:value gathered-value
+                       :type :Operand})
+                     true
+                     (conj
+                      (peek-stop-token-from-stack stack))
+                     true
+                     (conj
+                      {:value ","
+                       :type :Argument})
+                     true
+                     (conj
+                      array-row-token))
+                   (conj
+                    (pop stack)
+                    array-row-token)
+                   (if value? "" gathered-value)
+                   in-string?
+                   in-path?
+                   in-range?
+                   in-error?))
+
+                (= BRACE-CLOSE chr)
+                (let
+                 [value? (> (count gathered-value) 0)
+                  stop-token-1 (peek-stop-token-from-stack stack)
+                  stop-token-2 (peek-stop-token-from-stack (pop stack))]
+                  (recur
+                   (rest formula)
+                   (cond-> tokens
+                     value?
+                     (conj
+                      {:value gathered-value
+                       :type :Operand})
+                     true
+                     (conj
+                      stop-token-1)
+                     true
+                     (conj
+                      stop-token-2))
+                   (pop stack)
+                   (if value? "" gathered-value)
+                   in-string?
+                   in-path?
+                   in-range?
+                   in-error?))
+
+                (= WHITESPACE chr)
+                (recur
+                 (drop-while #(= \space %) formula)
+                 (cond-> tokens
+                   (> (count gathered-value) 0)
+                   (conj
+                    {:value gathered-value
+                     :type :Operand})
+                   true
+                   (conj
+                    {:value ""
+                     :type :Whitespace}))
+                 stack
+                 (if (> (count gathered-value) 0) "" gathered-value)
+                 in-string?
+                 in-path?
+                 in-range?
+                 in-error?)
+
+                (and
+                 (>= (count formula) 2)
+                 (some #(= % (str chr (second formula))) COMPARATORS-MULTI))
+                (recur
+                 (rest (rest formula))
                  (cond->
                   tokens
-                   value?
-                   (conj
-                    {:value gathered-value
-                     :type :Unknown})
-                   true
-                   (conj
-                    array-token)
-                   true
-                   (conj
-                    array-row-token))
-                 (conj stack array-token array-row-token)
-                 (if value? "" gathered-value)
-                 in-string?
-                 in-path?
-                 in-range?
-                 in-error?))
-
-              (= SEMICOLON chr)
-              (let [value? (> (count gathered-value) 0)
-                    array-row-token {:value "ARRAYROW"
-                        :type :Function
-                        :sub-type :Start}]
-                (recur
-                 (rest formula)
-                 (cond-> tokens
-                   value?
+                   (> (count gathered-value) 0)
                    (conj
                     {:value gathered-value
                      :type :Operand})
                    true
                    (conj
-                    (peek-stop-token-from-stack stack))
-                   true
-                   (conj
-                    {:value ","
-                     :type :Argument})
-                   true
-                   (conj
-                    array-row-token))
-                 (conj
-                  (pop stack)
-                  array-row-token)
-                 (if value? "" gathered-value)
+                    {:value (str chr (second formula))
+                     :type :OperatorInfix
+                     :sub-type :Logical}))
+                 stack
+                 (if (> (count gathered-value) 0) "" gathered-value)
                  in-string?
                  in-path?
                  in-range?
-                 in-error?))
+                 in-error?)
 
-              (= BRACE-CLOSE chr)
-              (let
-               [value? (> (count gathered-value) 0)
-                stop-token-1 (peek-stop-token-from-stack stack)
-                stop-token-2 (peek-stop-token-from-stack (pop stack))]
+                (contains? OPERATORS-INFIX chr)
                 (recur
                  (rest formula)
                  (cond-> tokens
-                   value?
-                   (conj
-                    {:value gathered-value
-                     :type :Operand})
-                   true
-                   (conj
-                    stop-token-1)
-                   true
-                   (conj
-                    stop-token-2))
-                 (pop stack)
-                 (if value? "" gathered-value)
-                 in-string?
-                 in-path?
-                 in-range?
-                 in-error?))
-
-              (= WHITESPACE chr)
-              (recur
-               (drop-while #(= \space %) formula)
-               (cond-> tokens
-                 (> (count gathered-value) 0)
-                 (conj
-                  {:value gathered-value
-                   :type :Operand})
-                 true
-                 (conj
-                  {:value ""
-                   :type :Whitespace}))
-               stack
-               (if (> (count gathered-value) 0) "" gathered-value)
-               in-string?
-               in-path?
-               in-range?
-               in-error?)
-
-              (and
-               (>= (count formula) 2)
-               (some #(= % (str chr (second formula))) COMPARATORS-MULTI))
-              (recur
-               (rest (rest formula))
-               (cond->
-                tokens
-                 (> (count gathered-value) 0)
-                 (conj
-                  {:value gathered-value
-                   :type :Operand})
-                 true
-                 (conj
-                  {:value (str chr (second formula))
-                   :type :OperatorInfix
-                   :sub-type :Logical}))
-               stack
-               (if (> (count gathered-value) 0) "" gathered-value)
-               in-string?
-               in-path?
-               in-range?
-               in-error?)
-
-              (contains? OPERATORS-INFIX chr)
-              (recur
-               (rest formula)
-               (cond-> tokens
-                 (> (count gathered-value) 0)
-                 (conj
-                  {:value gathered-value
-                   :type :Operand})
-                 true
-                 (conj
-                  {:value (str chr)
-                   :type :OperatorInfix}))
-               stack
-               (if (> (count gathered-value) 0) "" gathered-value)
-               in-string?
-               in-path?
-               in-range?
-               in-error?)
-
-              (contains? OPERATORS-POSTFIX chr)
-              (let [value? (> (count gathered-value) 0)]
-                (recur
-                 (rest formula)
-                 (cond-> tokens
-                   value?
+                   (> (count gathered-value) 0)
                    (conj
                     {:value gathered-value
                      :type :Operand})
                    true
                    (conj
                     {:value (str chr)
-                     :type :OperatorPostfix}))
+                     :type :OperatorInfix}))
                  stack
-                 (if value? "" gathered-value)
+                 (if (> (count gathered-value) 0) "" gathered-value)
                  in-string?
                  in-path?
                  in-range?
-                 in-error?))
+                 in-error?)
 
-              (= PAREN-OPEN chr)
-              (let [value? (> (count gathered-value) 0)
-                    start-token (if value?
-                                {:value gathered-value
-                                 :type :Function
-                                 :sub-type :Start}
-                                {:value ""
-                                 :type :Subexpression
-                                 :sub-type :Start})]
+                (contains? OPERATORS-POSTFIX chr)
+                (let [value? (> (count gathered-value) 0)]
+                  (recur
+                   (rest formula)
+                   (cond-> tokens
+                     value?
+                     (conj
+                      {:value gathered-value
+                       :type :Operand})
+                     true
+                     (conj
+                      {:value (str chr)
+                       :type :OperatorPostfix}))
+                   stack
+                   (if value? "" gathered-value)
+                   in-string?
+                   in-path?
+                   in-range?
+                   in-error?))
+
+                (= PAREN-OPEN chr)
+                (let [value? (> (count gathered-value) 0)
+                      start-token (if value?
+                                    {:value gathered-value
+                                     :type :Function
+                                     :sub-type :Start}
+                                    {:value ""
+                                     :type :Subexpression
+                                     :sub-type :Start})]
+                  (recur
+                   (rest formula)
+                   (conj
+                    tokens
+                    start-token)
+                   (conj stack start-token)
+                   (if value? "" gathered-value)
+                   in-string?
+                   in-path?
+                   in-range?
+                   in-error?))
+
+                (= COMMA chr)
                 (recur
                  (rest formula)
-                 (conj
-                  tokens
-                  start-token)
-                 (conj stack start-token)
-                 (if value? "" gathered-value)
+                 (cond-> tokens
+                   (> (count gathered-value) 0)
+                   (conj
+                    {:value gathered-value
+                     :type :Operand})
+                   (not= :Function (-> stack peek :type))
+                   (conj
+                    {:value ","
+                     :type :OperatorInfix
+                     :sub-type :Union})
+                   (= :Function (-> stack peek :type))
+                   (conj
+                    {:value ","
+                     :type :Argument}))
+                 stack
+                 (if (> (count gathered-value) 0) "" gathered-value)
                  in-string?
                  in-path?
                  in-range?
-                 in-error?))
+                 in-error?)
 
-              (= COMMA chr)
-              (recur
-               (rest formula)
-               (cond-> tokens
-                 (> (count gathered-value) 0)
-                 (conj
-                  {:value gathered-value
-                   :type :Operand})
-                 (not= :Function (-> stack peek :type))
-                 (conj
-                  {:value ","
-                   :type :OperatorInfix
-                   :sub-type :Union})
-                 (= :Function (-> stack peek :type))
-                 (conj
-                  {:value ","
-                   :type :Argument}))
-               stack
-               (if (> (count gathered-value) 0) "" gathered-value)
-               in-string?
-               in-path?
-               in-range?
-               in-error?)
+                (= PAREN-CLOSE chr)
+                (recur
+                 (rest formula)
+                 (cond-> tokens
+                   (> (count gathered-value) 0)
+                   (conj
+                    {:value gathered-value
+                     :type :Operand})
+                   true
+                   (conj
+                    (peek-stop-token-from-stack stack)))
+                 (pop stack)
+                 (if (> (count gathered-value) 0) "" gathered-value)
+                 in-string?
+                 in-path?
+                 in-range?
+                 in-error?)
 
-              (= PAREN-CLOSE chr)
-              (recur
-               (rest formula)
-               (cond-> tokens
-                 (> (count gathered-value) 0)
-                 (conj
-                  {:value gathered-value
-                   :type :Operand})
-                 true
-                 (conj
-                  (peek-stop-token-from-stack stack)))
-               (pop stack)
-               (if (> (count gathered-value) 0) "" gathered-value)
-               in-string?
-               in-path?
-               in-range?
-               in-error?)
+                :else
 
-              :else
-
-              (recur
-               (rest formula)
-               tokens
-               stack
-               (str gathered-value chr)
-               in-string?
-               in-path?
-               in-range?
-               in-error?)))))))
+                (recur
+                 (rest formula)
+                 tokens
+                 stack
+                 (str gathered-value chr)
+                 in-string?
+                 in-path?
+                 in-range?
+                 in-error?)))))))
 
 (defn parse-to-tokens-pass-2 [tokens]
   (reduce
@@ -573,11 +573,43 @@
    []
    (partition 3 1 (into [] (concat [nil] tokens [nil])))))
 
+(defn parse-to-tokens-pass-4 [tokens]
+  (loop [part-tokens (partition 3 1 (into [] (concat [nil] tokens [nil]))) result-vec []]
+    (if-not (seq part-tokens)
+      result-vec
+      (let [[{prev-type :type prev-sub-type :sub-type prev-value :value :as prev-token}
+             {current-type :type current-sub-type :sub-type current-value :value :as current-token}
+             {next-type :type next-sub-type :sub-type next-value :value :as next-token}]
+            (first part-tokens)
+            ;; because we treat ':' as an infix operator to support INDEX and OFFEST etc.
+            ;; we might need to reassemble a 'real' range that was earlier decomposed.
+            consolidate? (and (contains? #{:Range :Number} prev-sub-type)
+                              (= current-type :OperatorInfix)
+                              (= ":" current-value)
+                              (contains? #{:Range :Number} next-sub-type))]
+        (recur (cond-> part-tokens
+                 true
+                 rest
+                 consolidate?
+                 rest)
+               (cond
+                 (nil? current-token)
+                 result-vec
+                 consolidate?
+                 (conj
+                  (into [] (butlast result-vec))
+                  {:type :Operand
+                   :sub-type :Range
+                   :value (str prev-value current-value next-value)})
+                 :else
+                 (conj result-vec current-token)))))))
+
 (defn parse-to-tokens [formula]
   (-> formula
       (parse-to-tokens-pass-1)
       (parse-to-tokens-pass-2)
-      (parse-to-tokens-pass-3)))
+      (parse-to-tokens-pass-3)
+      (parse-to-tokens-pass-4)))
 
 (defn map-comparator [v1 v2]
   (cond
