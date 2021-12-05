@@ -26,13 +26,13 @@
         l-row (.getRow l-cell)
         l-col (.getCol l-cell)
         [cell-sheet-name cell-row-name cell-col-name] (.getCellRefParts f-cell)]
-    {:single? (.isSingleCell aref)
-     :column? (.isWholeColumnReference aref)
-     :sheet-name cell-sheet-name
-     :tl-name (str cell-col-name cell-row-name)
-     :tl-coord [f-row f-col]
-     :cols (inc (apply - (sort > [l-col f-col])))
-     :rows (inc (apply - (sort > [l-row f-row])))}))
+    {:areas [{:single? (.isSingleCell aref)
+              :column? (.isWholeColumnReference aref)
+              :sheet-name cell-sheet-name
+              :tl-name (str cell-col-name cell-row-name)
+              :tl-coord [f-row f-col]
+              :cols (inc (apply - (sort > [l-col f-col])))
+              :rows (inc (apply - (sort > [l-row f-row])))}]}))
 
 (defn get-named-ranges-from-wb-map 
   "For each sheet access its named ranges and consolidate
@@ -346,6 +346,40 @@
        form))
    unsubstituted-form))
 
+(defn construct-dynamic-range-for-range-operator 
+  [forms]
+  (letfn [(->fn [f]
+            (if (var? (eval f))
+              (-> f eval deref)
+              (eval f)))]
+    (let [fs (mapv
+              (fn [[f-name f-arg :as form]]
+                (cond (= functions/fn-index (->fn f-name))
+                      (re-matches #"(.*!)?(.*)" (eval (cons 'functions/fn-index-reference (rest form))))
+                      (= graph/eval-range (->fn f-name))
+                      (re-matches #"(.*!)?(.*)" f-arg)
+                      :else
+                      (throw (IllegalArgumentException.
+                              (str "NO MATCH. "
+                                   "Form " (pr-str form)
+                                   " FNAME:" f-name
+                                   " M?:" (if (var? (eval f-name))
+                                            (-> f-name eval deref)
+                                            (eval f-name)))))))
+              forms)
+          fstr (str (some (fn [[_ sheet _]] (when (some? sheet) sheet)) fs)
+                    (str/join ":" (map (fn [[_ _ label]] label) fs)))]
+      `(eval-range ~fstr *context*))))
+
+(defn substitute-dynamic-ranges
+  [substituted-form]
+  (walk/postwalk
+   (fn [f]
+     (if (and (list? f) (= 'functions/fn-range (first f)))
+       (construct-dynamic-range-for-range-operator (-> f rest))
+       f))
+   substituted-form))
+
 (defn recalc-workbook
   "Recalculate a workbook's sheet. Standard assumption is that 
    a graph is available and that it's acyclic. If it's not acyclic
@@ -366,6 +400,7 @@
                        calculated-result (binding [*context* wb-map]
                                            (-> formula-code
                                                (substitute-ranges)
+                                               (substitute-dynamic-ranges)
                                                (eval)))]
                    (conj
                     accum

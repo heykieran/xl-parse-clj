@@ -8,6 +8,8 @@
 
    {:name :unary-prcnt :s "%" :f 'functions/prcnt :c :postfix :a 1 :e [:OperatorPostfix nil]}
 
+   {:name :union :s "," :f 'functions/fn-union :c :infix :a :all :e [:OperatorInfix :Union]}
+
    {:name :binary-mult :s "*" :f '* :c :infix :a 2 :e [:OperatorInfix :Math]}
    {:name :binary-div :s "/" :f '/  :c :infix :a 2 :e [:OperatorInfix :Math]}
    {:name :binary-plus :s "+" :f '+ :c :infix :a 2 :e [:OperatorInfix :Math]}
