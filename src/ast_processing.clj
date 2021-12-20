@@ -57,7 +57,7 @@
      (= [:Operand :Range] [type sub-type])
      (list 'eval-range (if sheet-name (str sheet-name "!" value) value))
      (contains? #{:Function :OperatorInfix :OperatorPostfix :OperatorPrefix} type)
-     (sh/get-operator-fn value type sub-type)
+     (sh/get-operator-fn value type sub-type sheet-name)
      :else
      fmap)))
 

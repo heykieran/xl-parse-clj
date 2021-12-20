@@ -4,6 +4,7 @@
    [ubergraph.core :as uber]
    [ubergraph.alg :as alg]
    [dk.ative.docjure.spreadsheet :as dk]
+   [clojure.math.numeric-tower :as math]
    [xlparse :as parse]
    [excel :as excel]
    [ast-processing :as ast]
@@ -311,6 +312,10 @@
              (concat accum cell-name))
            [])))
 
+(defn can-be-int? [v]
+  (and (number? v)
+       (= 0 (compare v (int v)))))
+
 (defn eval-range [range-str wb-map]
   (let [expanded-range (expand-cell-range range-str wb-map)
         range-metadata (meta expanded-range)]
@@ -324,7 +329,10 @@
                       (empty? interim-result))
                   nil
                   (= 1 (count interim-result))
-                  (first interim-result)
+                  (let [r (first interim-result)]
+                    (if (can-be-int? r)
+                      (int r)
+                      r))
                   :else
                   interim-result)))
          ((fn [interim-result]
@@ -380,6 +388,47 @@
        f))
    substituted-form))
 
+(defn results-equal?
+  "Compare calculated result against the result as reported by 
+   Excel, accommodating different types and some tolerance for
+   rounding for numbers"
+  [v1 v2]
+  (let [numbers? (and (number? v1) (number? v2))
+        compatible?
+        (or
+         (= (type v1) (type v2))
+         numbers?)]
+    (if compatible?
+      (or (= 0 (compare v1 v2))
+          (and numbers? (< (math/abs (- v1 v2)) 0.0000001M)))
+      false
+      #_(throw (Exception.
+              (str "Invalid comparison values: "
+                   v1 " [" (type v1) "], "
+                   v2 " [" (type v2) "]"))))))
+
+(comment 
+  (results-equal? 1 1)
+  (results-equal? 1. 1)
+  (results-equal? 1. "1")
+  (results-equal? 1. 1.0000001)
+  (results-equal? 1. 1.00000001)
+  (results-equal? "A" "A")
+  :end)
+
+(defn substitute-indirection [form & [sheet-name]]
+  (tap> {:loc substitute-indirection
+         :f form})
+  (walk/postwalk
+   (fn [f]
+     (if (and (list? f) 
+              (list? (first f))
+              (= 'partial (ffirst f))
+              (= 'functions/fn-indirect (-> f (first) (second))))
+       (list 'eval-range f)
+       f))
+   form))
+
 (defn recalc-workbook
   "Recalculate a workbook's sheet. Standard assumption is that 
    a graph is available and that it's acyclic. If it's not acyclic
@@ -397,14 +446,17 @@
                                         (ast/process-tree)
                                         (sh/parse-expression-tokens)
                                         (ast/unroll-for-code-form sheet))
+                       formula-code-with-indirection
+                       (-> formula-code
+                           (substitute-indirection sheet-name))
                        calculated-result (binding [*context* wb-map]
-                                           (-> formula-code
+                                           (-> formula-code-with-indirection
                                                (substitute-ranges)
                                                (substitute-dynamic-ranges)
                                                (eval)))]
                    (conj
                     accum
-                    [node (= value calculated-result) formula value formula-code calculated-result]))
+                    [node (results-equal? value calculated-result) formula value formula-code-with-indirection calculated-result]))
                  accum)))
            []
            (alg/topsort graph))))

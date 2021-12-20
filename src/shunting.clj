@@ -51,6 +51,7 @@
    {:name :datevalue :s "datevalue" :f 'functions/fn-datevalue :c :args :a 1 :e [:Function :Start]}
    {:name :yearfrac :s "yearfrac" :f 'functions/fn-yearfrac :c :args :a :all :e [:Function :Start]}
    {:name :match :s "match" :f 'functions/fn-match :c :args :a :all :e [:Function :Start]}
+   {:name :indirect :s "indirect" :f 'functions/fn-indirect :c :args :a :all :e [:Function :Start] :sheet-arg true}
    {:name :vlookup :s "vlookup" :f 'functions/fn-vlookup :c :args :a :all :e [:Function :Start]}
 
    {:name :if :s "if" :f 'if :c :args :a 3 :e [:Function :Start]}
@@ -84,15 +85,20 @@
         (if (sequential? v) v [v]))))))
 
 (defn get-operator-fn
-  ([operator-str type sub-type]
+  ([operator-str type sub-type sheet-name]
    (let [o-fn (some
                (fn [operator]
                  (when (and
                         (=ci operator-str (:s operator))
                         (= [type sub-type] (:e operator)))
-                   (:f operator)))
+                   operator))
                OPERATORS-PRECEDENCE)]
-     (if o-fn o-fn 'missing-fn))))
+     (if o-fn
+       (if (:sheet-arg o-fn)
+         ; if the function takes the sheet as its first argument
+         (list 'partial (:f o-fn) sheet-name)
+         (:f o-fn))
+       'missing-fn))))
 
 (defn is-operator? [test-var]
   (when (map? test-var)

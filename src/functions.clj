@@ -4,12 +4,12 @@
    [excel :as excel]
    [expressions :as expressions]
    [clojure.math.numeric-tower :as math])
-  (:import 
+  (:import
    [java.time LocalDateTime]
    [java.util Calendar Calendar$Builder]
    [org.apache.poi.ss.util CellReference]))
 
-(defn fn-equal 
+(defn fn-equal
   "Replacement for `=` to handle cases where
    the value against which to compare `v1` (`v2`) is
    a regular expression. Used by certain functions
@@ -75,19 +75,19 @@
 (defn- wrap-if [base-fn]
   (fn [search-range criteria sum-range]
     (let [expr-code (-> criteria
-                      (expressions/recast-comparative-expression)
-                      (expressions/->code)
-                      (expressions/code->with-regex))
-        filtered-range (expressions/reduce-by-comp-expression expr-code search-range sum-range)]
-    #_(tap> {:loc base-fn
-           :search-range search-range
-           :sum-range sum-range
-           :criteria criteria
-           :recast (expressions/recast-comparative-expression criteria)
-           :code expr-code
-           :f-range filtered-range
-           :result (apply base-fn filtered-range)})
-    (apply base-fn filtered-range))))
+                        (expressions/recast-comparative-expression)
+                        (expressions/->code)
+                        (expressions/code->with-regex))
+          filtered-range (expressions/reduce-by-comp-expression expr-code search-range sum-range)]
+      #_(tap> {:loc base-fn
+               :search-range search-range
+               :sum-range sum-range
+               :criteria criteria
+               :recast (expressions/recast-comparative-expression criteria)
+               :code expr-code
+               :f-range filtered-range
+               :result (apply base-fn filtered-range)})
+      (apply base-fn filtered-range))))
 
 (defn fn-sumif [& [search-range criteria sum-range]]
   ((wrap-if fn-sum) search-range criteria sum-range))
@@ -124,8 +124,11 @@
   (excel/excel-now))
 
 (defn fn-date [& [year month day]]
-  (let [cal (excel/build-calendar-for-year-and-advance 
-              (if (<= 0 year 1899) (+ 1900 year) year) month day)
+  (let [cal (excel/build-calendar-for-year-and-advance
+             (if (<= 0 year 1899)
+               (+ 1900 year)
+               year)
+             month day)
         tz-id (-> cal
                   (.getTimeZone)
                   (.toZoneId))]
@@ -185,7 +188,7 @@
             (let [{:keys [single? column? cols rows]} meta-data]
               (partition cols array-as-vector)))))))
 
-(defn- convert-vector-to-table 
+(defn- convert-vector-to-table
   "Given a vector (or vectors of vectors) of values convert it 
    (or them) to tabular data structure(s) if possible, otherwise
    return the supplied vector unchanged.
@@ -213,7 +216,7 @@
   (cond (meta array-as-vector) ; a single vector with metadata
         (convert-single-vector-to-table array-as-vector)
         (every? some? (map meta array-as-vector)) ; a vector of vectors with metadata
-        (map 
+        (map
          (fn [array-as-vector-component]
            (convert-single-vector-to-table array-as-vector-component))
          array-as-vector)
@@ -221,22 +224,22 @@
         array-as-vector))
 
 (defn- extract-from-table-view [as-table r-offset c-offset]
-  (tap> {:as-table as-table
-         :r-offset r-offset
-         :c-offset c-offset})
+  #_(tap> {:as-table as-table
+           :r-offset r-offset
+           :c-offset c-offset})
   (letfn [(not-zero? [n] ((complement zero?) n))]
     (cond (and (not-zero? r-offset) (not-zero? c-offset))
-        (-> as-table
-            (nth (dec r-offset) nil)
-            (nth (dec c-offset) nil))
-        (and (not-zero? r-offset) (zero? c-offset))
-        (-> as-table
-            (nth (dec r-offset) nil))
-        (and (zero? r-offset) (not-zero? c-offset))
-        (->> as-table
-             (map #(nth % (dec c-offset) nil)))
-        :else
-        as-table)))
+          (-> as-table
+              (nth (dec r-offset) nil)
+              (nth (dec c-offset) nil))
+          (and (not-zero? r-offset) (zero? c-offset))
+          (-> as-table
+              (nth (dec r-offset) nil))
+          (and (zero? r-offset) (not-zero? c-offset))
+          (->> as-table
+               (map #(nth % (dec c-offset) nil)))
+          :else
+          as-table)))
 
 (defn fn-index [& [lookup-range-or-reference row-num col-num area-num :as vs]]
   ;; If this is an array call
@@ -248,13 +251,13 @@
   (let [is-multi? (is-multi-range? lookup-range-or-reference)
         {:keys [rows cols]}
         (if is-multi?
-          (-> (map meta lookup-range-or-reference) 
+          (-> (map meta lookup-range-or-reference)
               (nth (or (some-> area-num dec int) 0))
               (:areas)
               (first))
-          (-> lookup-range-or-reference 
-              (meta) 
-              (:areas) 
+          (-> lookup-range-or-reference
+              (meta)
+              (:areas)
               (first)))
         r-offset (if (= 1 rows) 1 row-num)
         c-offset (if (= 1 rows) row-num (or col-num 1))
@@ -263,12 +266,12 @@
                (convert-vector-to-table lookup-range-or-reference)
                 is-multi?
                 (nth a-offset))]
-    (tap> {:lookup-range lookup-range-or-reference
-           :multi? is-multi?
-           :meta (if is-multi?
-                   (map meta lookup-range-or-reference)
-                   (meta lookup-range-or-reference))
-           :convert table})
+    #_(tap> {:lookup-range lookup-range-or-reference
+             :multi? is-multi?
+             :meta (if is-multi?
+                     (map meta lookup-range-or-reference)
+                     (meta lookup-range-or-reference))
+             :convert table})
     (some-> table
             (first)
             (extract-from-table-view r-offset c-offset))))
@@ -281,10 +284,10 @@
           (convert-vector-to-table)
           #_(nth 1.0 nil)
           #_(nth 1.0 nil))
-  
+
   (convert-vector-to-table
    [1 2 3 4])
-  
+
   (convert-vector-to-table
    ^{:areas [{:cols 2}]}
    [1 2 3 4])
@@ -292,12 +295,12 @@
   (convert-vector-to-table
    [^{:areas [{:cols 2}]} [1 2 3 4]
     ^{:areas [{:cols 1}]} [1 2 3 4]])
-  
+
   :end)
 
 (defn fn-index-reference [& [lookup-range row-num col-num :as vs]]
   (let [{:keys [rows cols tl-coord]} (-> lookup-range (meta) :areas (first))
-        [tl-row tl-col] tl-coord 
+        [tl-row tl-col] tl-coord
         r-offset (if (= 1 rows) 1 row-num)
         c-offset (if (= 1 rows) row-num (or col-num 1))]
     (str
@@ -333,28 +336,83 @@
   (is-properly-sorted? ["C" "B" "B" "A"] 0)
   (is-properly-sorted? [4 4 3 2 1] -1))
 
-(defn fn-match [& [lookup-val lookup-vec match-type :as vs]]
-  (let [properly-sorted? (is-properly-sorted? lookup-vec match-type)] 
+(defn text-equal-with-possible-wildcard?
+  "Compare two strings to see if they're equal. The test-expr
+   may contain wildchars as understood by Excel i.e. * and ?, 
+   where either can be escaped by preceding them with a ~. comp-str
+   is a string. The comparison is done in a case-insensitive 
+   manner."
+  [test-expr comp-string]
+  (let
+   [looks-like-wc? (re-matches #".*((?<!~)\*|(?<!~)\?).*" test-expr)
+    re (if looks-like-wc?
+         (-> test-expr
+             (str/replace
+              #"([^~])(\*)"
+              "$1.*")
+             (str/replace
+              #"([^~])(\?)"
+              "$1.")
+             (str/replace
+              #"(~\*)"
+              "\\\\*")
+             (str/replace
+              #"(~\?)"
+              "\\\\?")
+             ((fn [s] (str "(?i)" s)))
+             (re-pattern))
+         (-> (str "^" test-expr "$")
+             (str/replace
+              #"(~\*)"
+              "\\\\*")
+             (str/replace
+              #"(~\?)"
+              "\\\\?")
+             ((fn [s] (str "(?i)" s)))
+             (re-pattern)))]
+    (some-> comp-string
+            (fn-equal re)
+            (some?)
+            (not= false))))
+
+(comment
+  (text-equal-with-possible-wildcard? "B~*A" "B*A")
+  (text-equal-with-possible-wildcard? "B~*A" "B*C")
+  (text-equal-with-possible-wildcard? "B*A" "BBBBBA")
+  (text-equal-with-possible-wildcard? "BA*" "BA")
+  (text-equal-with-possible-wildcard? "BA?" "BAC")
+  (text-equal-with-possible-wildcard? "BA?" "BACD")
+  (text-equal-with-possible-wildcard? "BA*" "BACD")
+  :end)
+
+(defn fn-match [& [lookup-val lookup-vec match-type-any :as vs]]
+  #_(tap> {:loc fn-match
+           :lookup-val lookup-val
+           :lookup-vec lookup-vec
+           :match-type match-type-any})
+  (let [match-type (or (some-> match-type-any (int)) 1)
+        properly-sorted? (is-properly-sorted? lookup-vec match-type)]
     (if properly-sorted?
       (loop [v lookup-vec pos 0 prev-canditate? nil r nil]
         (cond
           (or (and (zero? match-type) (some? prev-canditate?) (true? prev-canditate?))
               (and (not (zero? match-type)) (some? prev-canditate?) (false? prev-canditate?)))
-          r
+          (some-> r (inc))
           (not (seq v))
           (if prev-canditate?
             r
             "#N/A")
           :else
           (let [c-val (first v)
-                is-canditate? 
+                is-canditate?
                 (case match-type
                   0 (if (or (string? c-val)
                             (string? lookup-val))
-                      (= 0 (compare (-> c-val (str)) (-> lookup-val (str))))
+                      (text-equal-with-possible-wildcard?
+                       (-> lookup-val (str))
+                       (-> c-val (str)))
                       (= 0 (compare c-val lookup-val)))
                   (not= match-type (compare c-val lookup-val)))]
-            (println c-val is-canditate? pos)
             (recur
              (rest v)
              (inc pos)
@@ -362,54 +420,27 @@
              (if is-canditate? pos r)))))
       "#ERROR")))
 
-(comment 
+(comment
   (fn-match 6 [1 3 5 7 9 11 13 15] 1)
   (fn-match 15 [1 3 5 7 9 11 13 15] 1)
   (fn-match 4 [15 13 11 9 7 5 3 1] -1)
   (fn-match 4 [9 7 5 4 3 1] 0)
   (fn-match 90 [9 7 5 4 3 1] 0)
-  (fn-match "B*" ["A" "B" "C"] 0)
+  (fn-match "B*" ["ABC" "BC" "C"] 0)
+  (fn-match "B~*A" ["ABC" "BC" "B*A" "C"] 0)
+  (fn-match "B*" ["ABC" "BC" "C"] 0)
+  (fn-match 41.0 [25.0 38.0 40.0 41.0] 0.0)
+  :end)
 
-  (let [test-expr "A~**~?"
-        comp-string "A*B?"] 
-    (let
-     [looks-like-wc? (re-matches #".*((?<!~)\*|(?<!~)\?).*" test-expr)
-      re (if looks-like-wc?
-           (-> test-expr
-               (str/replace
-                #"([^~])(\*)"
-                "$1.*")
-               (str/replace
-                #"([^~])(\?)"
-                "$1.")
-               (str/replace
-                #"(~\*)"
-                "\\\\*")
-               (str/replace
-                #"(~\?)"
-                "\\\\?")
-               (re-pattern))
-           (-> test-expr
-               (str/replace
-                #"(~\*)"
-                "\\\\*")
-               (str/replace
-                #"(~\?)"
-                "\\\\?")
-               (re-pattern)))]
-      [looks-like-wc? re (re-matches re comp-string)]))
-
-  (-> "A*"
-      (str/replace
-       #"(~\*)"
-       "*")
-      (str/replace
-       #"(~\?)"
-       "?")
-      (pr-str)
-      (re-pattern))
-
-  (re-matches (re-pattern "A.*") "ABC"))
+(defn fn-indirect [& [sheet-name ref-text a1]]
+  (tap> {:loc fn-indirect
+         :sheet-name sheet-name
+         :ref-text ref-text
+         :a1 a1})
+  (let [[_ sheet-with-exclam cell] (re-matches #"(.*!)?(.*)" ref-text)]
+    (if sheet-with-exclam
+      ref-text
+      (str sheet-name "!" ref-text))))
 
 (defn fn-vlookup [& [lookup-value table-array-as-vector col-index range-lookup]]
   (let [table-array (convert-vector-to-table table-array-as-vector)
@@ -418,13 +449,13 @@
                  (when (= lookup-value s-val)
                    (nth table-row (dec col-index))))
                table-array)]
-    (tap> {:loc fn-vlookup
-           :lookup lookup-value
-           :table-vector table-array-as-vector
-           :col-index col-index
-           :range-lookup range-lookup
-           :table-array (convert-vector-to-table table-array-as-vector)
-           :return r-val})
+    #_(tap> {:loc fn-vlookup
+             :lookup lookup-value
+             :table-vector table-array-as-vector
+             :col-index col-index
+             :range-lookup range-lookup
+             :table-array (convert-vector-to-table table-array-as-vector)
+             :return r-val})
     r-val))
 
 (defn fn-union [& vs]
@@ -434,16 +465,16 @@
                    (let [curr-vs (first vs-to-combine)
                          {:keys [tl-name tl-coord rows cols] :as curr-meta} (meta curr-vs)
                          curr-table (convert-vector-to-table curr-vs)]
-                     
+
                      (recur (rest vs-to-combine)
                             (concat combined curr-table)))))]
-    (tap> {:loc fn-union
-           :result result
-           :vs (mapv (fn [v]
-                       {:v v
-                        :meta (meta v)
-                        :t (convert-vector-to-table v)})
-                     vs)}))
+    #_(tap> {:loc fn-union
+             :result result
+             :vs (mapv (fn [v]
+                         {:v v
+                          :meta (meta v)
+                          :t (convert-vector-to-table v)})
+                       vs)}))
   vs)
 
 
