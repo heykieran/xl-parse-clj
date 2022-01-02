@@ -15,7 +15,7 @@
    {:name :binary-plus :s "+" :f '+ :c :infix :a 2 :e [:OperatorInfix :Math]}
    {:name :binary-minus :s "-" :f '- :c :infix :a 2 :e [:OperatorInfix :Math]}
    {:name :binary-exp :s "^" :f '** :c :infix :a 2 :e [:OperatorInfix :Math]}
-   {:name :binary-concat :s "&" :f 'str :c :infix :a 2 :e [:OperatorInfix :Concatenation]} ; what should this do? There are coercions to text in Excel
+   {:name :binary-concat :s "&" :f 'functions/fn-concat :c :infix :a 2 :e [:OperatorInfix :Concatenation]} ; what should this do? There are coercions to text in Excel
 
    {:name :compare-eq :s "=" :f 'functions/fn-equal :c :infix :a 2 :e [:OperatorInfix :Logical]}
    {:name :compare-gt :s ">" :f '> :c :infix :a 2 :e [:OperatorInfix :Logical]}
@@ -51,11 +51,12 @@
    {:name :datevalue :s "datevalue" :f 'functions/fn-datevalue :c :args :a 1 :e [:Function :Start]}
    {:name :yearfrac :s "yearfrac" :f 'functions/fn-yearfrac :c :args :a :all :e [:Function :Start]}
    {:name :match :s "match" :f 'functions/fn-match :c :args :a :all :e [:Function :Start]}
-   {:name :indirect :s "indirect" :f 'functions/fn-indirect :c :args :a :all :e [:Function :Start] :sheet-arg true}
+   {:name :indirect :s "indirect" :f 'functions/fn-indirect :c :args :a :all :e [:Function :Start] :context-arg true}
+   {:name :offset :s "offset" :f 'functions/fn-offset :c :args :a :all :e [:Function :Start] :context-arg true}
    {:name :vlookup :s "vlookup" :f 'functions/fn-vlookup :c :args :a :all :e [:Function :Start]}
 
    {:name :if :s "if" :f 'if :c :args :a 3 :e [:Function :Start]}
-   
+
    {:name :binary-colon :s ":" :f 'functions/fn-range :c :infix :a 2 :e [:OperatorInfix :Math]}])
 
 (defn =ci [a1 a2]
@@ -94,9 +95,10 @@
                    operator))
                OPERATORS-PRECEDENCE)]
      (if o-fn
-       (if (:sheet-arg o-fn)
-         ; if the function takes the sheet as its first argument
-         (list 'partial (:f o-fn) sheet-name)
+       (if (:context-arg o-fn)
+         ;; if the function takes the sheet as its first argument
+         ;; and the context as its second
+         (list 'partial (:f o-fn) sheet-name 'graph/*context*)
          (:f o-fn))
        'missing-fn))))
 
@@ -270,11 +272,11 @@
                                    {:sub-type :Number
                                     :type :Operand
                                     :value "2"}])
-  
-  (parse-simple-expression-tokens [{:sub-type :Text, :type :Operand, :value ">"} 
-                                   {:sub-type :Concatenation, :type :OperatorInfix, :value "&"} 
+
+  (parse-simple-expression-tokens [{:sub-type :Text, :type :Operand, :value ">"}
+                                   {:sub-type :Concatenation, :type :OperatorInfix, :value "&"}
                                    {:sub-type :Range, :type :Operand, :value "A1"}])
-  
+
   (is-operator? {:sub-type :Text, :type :Operand, :value ">"})
 
   (parse-expression-tokens [{:value "max"

@@ -2,12 +2,14 @@
   (:require
    [clojure.string :as str]
    [excel :as excel]
+   [graph :as graph]
    [expressions :as expressions]
    [clojure.math.numeric-tower :as math])
   (:import
    [java.time LocalDateTime]
    [java.util Calendar Calendar$Builder]
-   [org.apache.poi.ss.util CellReference]))
+   [org.apache.poi.ss.util CellReference]
+   [box Box]))
 
 (defn fn-equal
   "Replacement for `=` to handle cases where
@@ -19,9 +21,10 @@
    Currently, this is allowed, but it may not be 
    consistent with how Excel works."
   [v1 v2]
-  (if (instance? java.util.regex.Pattern v2)
-    (re-matches v2 (str v1))
-    (= v1 v2)))
+  (let [v1-n nil #_(map #(if (instance? Box %) (deref %) %) vs)]
+    (if (instance? java.util.regex.Pattern v2)
+      (re-matches v2 (str v1))
+      (= v1 v2))))
 
 (defn abs [v]
   (if (neg? v)
@@ -58,6 +61,9 @@
 (defn pi []
   (Math/PI))
 
+(defn fn-concat [& vs]
+  (apply str (map #(if (instance? Box %) @% %) vs)))
+
 (defn fn-search [look-for-str in-str & [starting-at]]
   (cond
     (and starting-at ((complement number?) starting-at))
@@ -70,23 +76,20 @@
       excel/VALUE-ERROR)))
 
 (defn fn-sum [& vs]
-  (apply + (filter number? (flatten vs))))
+  (let [values (flatten (map #(if (instance? Box %) (deref %) %) vs))]
+    (apply + (filter number? values))))
 
 (defn- wrap-if [base-fn]
   (fn [search-range criteria sum-range]
     (let [expr-code (-> criteria
+                        ((fn [c] (if (instance? Box c) @c c)))
                         (expressions/recast-comparative-expression)
                         (expressions/->code)
                         (expressions/code->with-regex))
-          filtered-range (expressions/reduce-by-comp-expression expr-code search-range sum-range)]
-      #_(tap> {:loc base-fn
-               :search-range search-range
-               :sum-range sum-range
-               :criteria criteria
-               :recast (expressions/recast-comparative-expression criteria)
-               :code expr-code
-               :f-range filtered-range
-               :result (apply base-fn filtered-range)})
+          filtered-range (expressions/reduce-by-comp-expression
+                          expr-code
+                          search-range
+                          sum-range)]
       (apply base-fn filtered-range))))
 
 (defn fn-sumif [& [search-range criteria sum-range]]
@@ -99,7 +102,10 @@
   (apply min (flatten vs)))
 
 (defn fn-count [& vs]
-  (count (keep #(when (number? %) %) vs)))
+  (let [values (flatten (map #(if (instance? Box %) (deref %) %) vs))]
+    (->> values
+         (keep #(when (number? %) %))
+         (count))))
 
 (defn fn-count-if [& [search-range criteria sum-range]]
   ((wrap-if fn-count) search-range criteria sum-range))
@@ -110,15 +116,15 @@
       (float)))
 
 (defn fn-average [& vs]
-  (let [c-vs (flatten vs)]
-    (/ (apply fn-sum c-vs)
-       (apply fn-count c-vs))))
+  (/ (apply fn-sum vs)
+     (apply fn-count vs)))
 
 (defn fn-average-if [& [search-range criteria sum-range]]
   ((wrap-if fn-average) search-range criteria sum-range))
 
 (defn fn-concatenate [& vs]
-  (apply str (flatten vs)))
+  (let [values (flatten (map #(if (instance? Box %) (deref %) %) vs))]
+    (apply str values)))
 
 (defn fn-now []
   (excel/excel-now))
@@ -186,7 +192,7 @@
          (mapv
           (fn [meta-data]
             (let [{:keys [single? column? cols rows]} meta-data]
-              (partition cols array-as-vector)))))))
+              (partition cols @array-as-vector)))))))
 
 (defn- convert-vector-to-table
   "Given a vector (or vectors of vectors) of values convert it 
@@ -224,9 +230,6 @@
         array-as-vector))
 
 (defn- extract-from-table-view [as-table r-offset c-offset]
-  #_(tap> {:as-table as-table
-           :r-offset r-offset
-           :c-offset c-offset})
   (letfn [(not-zero? [n] ((complement zero?) n))]
     (cond (and (not-zero? r-offset) (not-zero? c-offset))
           (-> as-table
@@ -248,6 +251,9 @@
   ;;   we only consider the first area, which should be the only one.
   ;; If this is a reference call
   ;;   we need to pay attention to the area
+  (tap> {:loc fn-index
+         :lookup-range lookup-range-or-reference
+         :is-multi? (is-multi-range? lookup-range-or-reference)})
   (let [is-multi? (is-multi-range? lookup-range-or-reference)
         {:keys [rows cols]}
         (if is-multi?
@@ -386,14 +392,11 @@
   :end)
 
 (defn fn-match [& [lookup-val lookup-vec match-type-any :as vs]]
-  #_(tap> {:loc fn-match
-           :lookup-val lookup-val
-           :lookup-vec lookup-vec
-           :match-type match-type-any})
   (let [match-type (or (some-> match-type-any (int)) 1)
-        properly-sorted? (is-properly-sorted? lookup-vec match-type)]
+        lookup-vec-values (if (instance? Box lookup-vec) @lookup-vec lookup-vec)
+        properly-sorted? (is-properly-sorted? lookup-vec-values match-type)]
     (if properly-sorted?
-      (loop [v lookup-vec pos 0 prev-canditate? nil r nil]
+      (loop [v lookup-vec-values pos 0 prev-canditate? nil r nil]
         (cond
           (or (and (zero? match-type) (some? prev-canditate?) (true? prev-canditate?))
               (and (not (zero? match-type)) (some? prev-canditate?) (false? prev-canditate?)))
@@ -432,15 +435,36 @@
   (fn-match 41.0 [25.0 38.0 40.0 41.0] 0.0)
   :end)
 
-(defn fn-indirect [& [sheet-name ref-text a1]]
-  (tap> {:loc fn-indirect
-         :sheet-name sheet-name
-         :ref-text ref-text
-         :a1 a1})
-  (let [[_ sheet-with-exclam cell] (re-matches #"(.*!)?(.*)" ref-text)]
+(defn fn-indirect [& [sheet-name context ref-text a1]]
+  (let [value (if (instance? Box ref-text) @ref-text ref-text)
+        [_ sheet-with-exclam cell] (re-matches #"(.*!)?(.*)" value)]
     (if sheet-with-exclam
-      ref-text
-      (str sheet-name "!" ref-text))))
+      value
+      (str sheet-name "!" value))))
+
+(defn fn-offset [& [sheet-name context reference rows cols height width]]
+  (let [base-cell (-> reference meta :areas (first) :tl-name)
+        target-cell (when base-cell
+                      (excel/ref-str->ref-str-using-offset
+                       base-cell
+                       rows cols))
+        target-value (when (not= excel/REF-ERROR target-cell)
+                       (graph/eval-range (str sheet-name "!" target-cell) context))]
+    (tap> {:loc fn-offset
+           :sheet-name sheet-name
+           :reference reference
+           :meta (meta reference)
+           :table (convert-vector-to-table reference)
+           :base-cell base-cell
+           :target-cell target-cell
+           :target-value target-value
+           :rows rows
+           :cols cols
+           :height height
+           :width width}))
+  1)
+
+(comment (excel/ref-str->ref-str-using-offset "D3" -3 -3))
 
 (defn fn-vlookup [& [lookup-value table-array-as-vector col-index range-lookup]]
   (let [table-array (convert-vector-to-table table-array-as-vector)

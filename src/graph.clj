@@ -9,12 +9,13 @@
    [excel :as excel]
    [ast-processing :as ast]
    [shunting :as sh]
-   [functions]
+   [box :as box]
    [clojure.walk :as walk])
   (:import
    [org.apache.poi.ss SpreadsheetVersion]
    [org.apache.poi.ss.util AreaReference]
-   [org.apache.poi.ss.usermodel CellType DateUtil]))
+   [org.apache.poi.ss.usermodel CellType DateUtil]
+   [box Box]))
 
 (declare ^:dynamic *context*)
 
@@ -336,9 +337,7 @@
                   :else
                   interim-result)))
          ((fn [interim-result]
-            (if (instance? clojure.lang.IObj interim-result)
-              (with-meta interim-result range-metadata)
-              interim-result))))))
+            (box/box interim-result range-metadata))))))
 
 (defn substitute-ranges [unsubstituted-form]
   ;; TODO: the ns-resolve is not really needed. Could be replaced
@@ -362,7 +361,10 @@
               (eval f)))]
     (let [fs (mapv
               (fn [[f-name f-arg :as form]]
-                (cond (= functions/fn-index (->fn f-name))
+                ;; TODO: Originally here, the comparison was 
+                ;; (= functions/fn-index (->fn f-name))
+                ;; but this requires ns import of functions
+                (cond (= 'functions/fn-index f-name)
                       (re-matches #"(.*!)?(.*)" (eval (cons 'functions/fn-index-reference (rest form))))
                       (= graph/eval-range (->fn f-name))
                       (re-matches #"(.*!)?(.*)" f-arg)
@@ -393,14 +395,16 @@
    Excel, accommodating different types and some tolerance for
    rounding for numbers"
   [v1 v2]
-  (let [numbers? (and (number? v1) (number? v2))
+  (let [v1-value (if (instance? Box v1) @v1 v1) 
+        v2-value (if (instance? Box v2) @v2 v2)
+        numbers? (and (number? v1-value) (number? v2-value))
         compatible?
         (or
-         (= (type v1) (type v2))
+         (= (type v1-value) (type v2-value))
          numbers?)]
     (if compatible?
-      (or (= 0 (compare v1 v2))
-          (and numbers? (< (math/abs (- v1 v2)) 0.0000001M)))
+      (or (= 0 (compare v1-value v2-value))
+          (and numbers? (< (math/abs (- v1-value v2-value)) 0.0000001M)))
       false
       #_(throw (Exception.
               (str "Invalid comparison values: "
@@ -418,15 +422,27 @@
 
 (defn substitute-indirection [form & [sheet-name]]
   (tap> {:loc substitute-indirection
-         :f form})
+         :f form
+         :sheet-name sheet-name})
   (walk/postwalk
    (fn [f]
-     (if (and (list? f) 
-              (list? (first f))
-              (= 'partial (ffirst f))
-              (= 'functions/fn-indirect (-> f (first) (second))))
-       (list 'eval-range f)
-       f))
+     (cond (and (list? f)
+                (list? (first f))
+                (= 'partial (ffirst f))
+                (= 'functions/fn-indirect (-> f (first) (second))))
+           (list 'eval-range f)
+           (and false 
+                (list? f)
+                (list? (first f))
+                (= 'partial (ffirst f))
+                (= 'functions/fn-offset (-> f (first) (second)))
+                (list? (second f))
+                (= 'eval-range (-> f (second) (first))))
+           (concat (list (first f))
+                   (list 'as-ref (second f))
+                   (-> f (rest) (rest)))
+           :else
+           f))
    form))
 
 (defn recalc-workbook
@@ -446,17 +462,23 @@
                                         (ast/process-tree)
                                         (sh/parse-expression-tokens)
                                         (ast/unroll-for-code-form sheet))
-                       formula-code-with-indirection
-                       (-> formula-code
-                           (substitute-indirection sheet-name))
+                       formula-code-with-indirection (-> formula-code
+                                                         (substitute-indirection sheet-name))
+                       final-code (binding [*context* wb-map]
+                                    (-> formula-code-with-indirection
+                                        (substitute-ranges)
+                                        (substitute-dynamic-ranges)))
                        calculated-result (binding [*context* wb-map]
-                                           (-> formula-code-with-indirection
-                                               (substitute-ranges)
-                                               (substitute-dynamic-ranges)
+                                           (-> final-code
                                                (eval)))]
+                   #_(tap> {:base-code formula-code
+                          :indirected-code formula-code-with-indirection
+                          :final-code final-code})
                    (conj
                     accum
-                    [node (results-equal? value calculated-result) formula value formula-code-with-indirection calculated-result]))
+                    [node (results-equal? value calculated-result) 
+                     formula value final-code 
+                     (if (instance? Box calculated-result) @calculated-result calculated-result)]))
                  accum)))
            []
            (alg/topsort graph))))

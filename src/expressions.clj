@@ -28,8 +28,8 @@
                            (re-matches #".*((?<!~)\*|(?<!~)\?).*" text-expr))]
     (if has-comparative?
       (str "$SELF" comp-op (subs text-expr (count comp-op)))
-      (str "$SELF" (if wildcard-exp? " = " "=") 
-           (if is-str? 
+      (str "$SELF" (if wildcard-exp? " = " "=")
+           (if is-str?
              (if wildcard-exp?
                (pr-str (-> text-expr like-expr->re-str (str "__as_regex")))
                (-> text-expr
@@ -39,7 +39,7 @@
                    (str/replace
                     #"(~\?)"
                     "?")
-                   (pr-str))) 
+                   (pr-str)))
              text-expr)))))
 
 (defn ->code [expr]
@@ -64,8 +64,9 @@
    form))
 
 (defn reduce-by-comp-expression [expr-form search-seq & [val-seq]]
-  (let [val-seq (or val-seq search-seq)]
-    (loop [s-seq search-seq v-seq val-seq filtered-seq []]
+  (let [val-seq (or val-seq
+                    search-seq)]
+    (loop [s-seq (some-> search-seq deref) v-seq (some-> val-seq deref) filtered-seq []]
       (if-not (seq s-seq)
         filtered-seq
         (let [s-val (first s-seq)
@@ -79,17 +80,17 @@
            (rest v-seq)
            (if match? (conj filtered-seq v-val) filtered-seq)))))))
 
-(comment 
+(comment
   (re-matches #"^(<(?!>)|(?<!<)>|=|<>).*$" ">100.0")
   (re-matches #"^(<(?!>)|(?<!<)>|=|<>).*$" "2*")
-  
+
   (recast-comparative-expression "2*")
   (recast-comparative-expression "2~*")
   (recast-comparative-expression "2~**")
   (recast-comparative-expression ">100.0")
   (recast-comparative-expression "100.0")
   (recast-comparative-expression 100.0)
-  
+
   (-> "2*"
       (recast-comparative-expression)
       (->code)

@@ -9,9 +9,11 @@
    [java.time.format DateTimeFormatter]
    [java.text DateFormatSymbols]
    [org.apache.poi.util LocaleUtil]
+   [org.apache.poi.ss.util CellReference]
    [org.apache.poi.ss.usermodel CellType DateUtil]))
 
 (def VALUE-ERROR "#VALUE!")
+(def REF-ERROR "#REF!")
 
 (def PATTERNS
   [[:YMD-DASHES {:r #"^(\d{4})-(\w+)-(\d{1,2})( .*)?$", :s "ymd" :m-type :num}]
@@ -360,6 +362,39 @@
     (= CellType/ERROR (.getCellType c)) :error
     :else
     :unknown))
+
+(defn ref-str->row-col
+  [^String ref-str]
+  (-> ref-str
+      (CellReference.)
+      ((juxt (memfn ^CellReference getRow) (memfn ^CellReference getCol)))))
+
+(defn row-col->ref-str
+  ([[row col :as rc-tuple]]
+   (row-col->ref-str row col))
+  ([^long row ^long col]
+   (if (and (<= 0 row 1048576)
+            (<= 0 col 16384))
+     (-> (CellReference. row col)
+         (.formatAsString false))
+     REF-ERROR)))
+
+(defn ref-str->ref-str-using-offset
+  [ref-str row-offset col-offset]
+  (let [[row col] (ref-str->row-col ref-str)]
+    (-> [(+ row row-offset)
+         (+ col col-offset)]
+        (row-col->ref-str))))
+
+(comment
+  (ref-str->row-col "A1")
+  (row-col->ref-str 6 3)
+  (row-col->ref-str [6 3])
+  (ref-str->ref-str-using-offset "D7" -1 -1)
+  (ref-str->row-col "D3")
+  (row-col->ref-str [-1 0])
+  (ref-str->ref-str-using-offset "D3" -3 -3)
+  :end)
 
 (defn extract-test-formulas
   "Extract some test formulas and results from an Excel Workbook.
