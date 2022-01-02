@@ -11,7 +11,7 @@
    [org.apache.poi.ss.util CellReference]
    [box Box]))
 
-(defn fn-equal
+(defn fn-equal?
   "Replacement for `=` to handle cases where
    the value against which to compare `v1` (`v2`) is
    a regular expression. Used by certain functions
@@ -21,10 +21,69 @@
    Currently, this is allowed, but it may not be 
    consistent with how Excel works."
   [v1 v2]
-  (let [v1-n nil #_(map #(if (instance? Box %) (deref %) %) vs)]
-    (if (instance? java.util.regex.Pattern v2)
-      (re-matches v2 (str v1))
-      (= v1 v2))))
+  (let [v1-value (if (instance? Box v1) @v1 v1)
+        v2-value (if (instance? Box v2) @v2 v2)]
+    (if (instance? java.util.regex.Pattern v2-value)
+      (re-matches v2-value (str v1-value))
+      (= v1-value v2-value))))
+
+(defn fn-unary-plus [v1]
+  (let [v1-value (if (instance? Box v1) @v1 v1)]
+    (+ v1-value)))
+
+(defn fn-unary-minus [v1]
+  (let [v1-value (if (instance? Box v1) @v1 v1)]
+    (- v1-value)))
+
+(defn fn-add [v1 v2]
+  (let [v1-value (if (instance? Box v1) @v1 v1)
+        v2-value (if (instance? Box v2) @v2 v2)]
+    (+ v1-value v2-value)))
+
+(defn fn-subtract [v1 v2]
+  (let [v1-value (if (instance? Box v1) @v1 v1)
+        v2-value (if (instance? Box v2) @v2 v2)]
+    (- v1-value v2-value)))
+
+(defn fn-multiply [v1 v2]
+  (let [v1-value (if (instance? Box v1) @v1 v1)
+        v2-value (if (instance? Box v2) @v2 v2)]
+    (* v1-value v2-value)))
+
+(defn fn-divide [v1 v2]
+  (let [v1-value (if (instance? Box v1) @v1 v1)
+        v2-value (if (instance? Box v2) @v2 v2)]
+    (/ v1-value v2-value)))
+
+(defn fn-exponent [v1 v2]
+  (let [v1-value (if (instance? Box v1) @v1 v1)
+        v2-value (if (instance? Box v2) @v2 v2)]
+    (math/expt v1-value v2-value)))
+
+(defn fn-gt? [v1 v2]
+  (let [v1-value (if (instance? Box v1) @v1 v1)
+        v2-value (if (instance? Box v2) @v2 v2)]
+    (> v1-value v2-value)))
+
+(defn fn-lt? [v1 v2]
+  (let [v1-value (if (instance? Box v1) @v1 v1)
+        v2-value (if (instance? Box v2) @v2 v2)]
+    (< v1-value v2-value)))
+
+(defn fn-gt-equal? [v1 v2]
+  (let [v1-value (if (instance? Box v1) @v1 v1)
+        v2-value (if (instance? Box v2) @v2 v2)]
+    (>= v1-value v2-value)))
+
+(defn fn-lt-equal? [v1 v2]
+  (let [v1-value (if (instance? Box v1) @v1 v1)
+        v2-value (if (instance? Box v2) @v2 v2)]
+    (<= v1-value v2-value)))
+
+(defn fn-not-equal? [v1 v2]
+  (let [v1-value (if (instance? Box v1) @v1 v1)
+        v2-value (if (instance? Box v2) @v2 v2)]
+    (not= v1-value v2-value)))
 
 (defn abs [v]
   (if (neg? v)
@@ -111,9 +170,10 @@
   ((wrap-if fn-count) search-range criteria sum-range))
 
 (defn fn-counta [& vs]
-  (-> (keep #(when (not (str/blank? (str %))) %) (flatten vs))
+  (let [values (flatten (map #(if (instance? Box %) (deref %) %) vs))]
+    (-> (keep #(when (not (str/blank? (str %))) %) values)
       (count)
-      (float)))
+      (float))))
 
 (defn fn-average [& vs]
   (/ (apply fn-sum vs)
@@ -155,18 +215,20 @@
   :end)
 
 (defn fn-days [& [d1 d2]]
-  (- d1 d2))
+  (fn-subtract d1 d2))
 
 (defn fn-datevalue [v]
   (excel/parse-excel-string-to-serial-date v))
 
 (defn fn-yearfrac [& [date-1 date-2 b]]
-  (let [d1 (if (number? date-1)
-             date-1
-             (excel/parse-excel-string-to-serial-date date-1))
-        d2 (if (number? date-2)
-             date-2
-             (excel/parse-excel-string-to-serial-date date-2))]
+  (let [date-1-value (if (instance? Box date-1) @date-1 date-1)
+        date-2-value (if (instance? Box date-2) @date-2 date-2)
+        d1 (if (number? date-1-value)
+             date-1-value
+             (excel/parse-excel-string-to-serial-date date-1-value))
+        d2 (if (number? date-2-value)
+             date-2-value
+             (excel/parse-excel-string-to-serial-date date-2-value))]
     (case b
       (nil 0.) (excel/nasd-360-diff d1 d2)
       1. (excel/act-act-diff d1 d2)
@@ -467,10 +529,12 @@
 (comment (excel/ref-str->ref-str-using-offset "D3" -3 -3))
 
 (defn fn-vlookup [& [lookup-value table-array-as-vector col-index range-lookup]]
-  (let [table-array (convert-vector-to-table table-array-as-vector)
+  (assert (= 1 (-> table-array-as-vector (meta) :areas (count))) 
+          "Only expecting one area in meta data for fn-vlookup")
+  (let [table-array (-> table-array-as-vector convert-vector-to-table (first))
         r-val (some
                (fn [[s-val :as table-row]]
-                 (when (= lookup-value s-val)
+                 (when (fn-equal? lookup-value s-val)
                    (nth table-row (dec col-index))))
                table-array)]
     #_(tap> {:loc fn-vlookup
@@ -478,7 +542,8 @@
              :table-vector table-array-as-vector
              :col-index col-index
              :range-lookup range-lookup
-             :table-array (convert-vector-to-table table-array-as-vector)
+             :table-array table-array
+             :meta-table-array (meta table-array-as-vector)
              :return r-val})
     r-val))
 

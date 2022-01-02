@@ -3,26 +3,26 @@
             [clojure.walk :as walk]))
 
 (def OPERATORS-PRECEDENCE
-  [{:name :unary-plus :s "+" :f '+ :c :prefix :a 1 :e [:OperatorPrefix nil]}
-   {:name :unary-minus :s "-" :f '- :c :prefix :a 1 :e [:OperatorPrefix nil]}
+  [{:name :unary-plus :s "+" :f 'functions/fn-unary-plus :c :prefix :a 1 :e [:OperatorPrefix nil]}
+   {:name :unary-minus :s "-" :f 'functions/fn-unary-minus :c :prefix :a 1 :e [:OperatorPrefix nil]}
 
    {:name :unary-prcnt :s "%" :f 'functions/prcnt :c :postfix :a 1 :e [:OperatorPostfix nil]}
 
    {:name :union :s "," :f 'functions/fn-union :c :infix :a :all :e [:OperatorInfix :Union]}
 
-   {:name :binary-mult :s "*" :f '* :c :infix :a 2 :e [:OperatorInfix :Math]}
-   {:name :binary-div :s "/" :f '/  :c :infix :a 2 :e [:OperatorInfix :Math]}
-   {:name :binary-plus :s "+" :f '+ :c :infix :a 2 :e [:OperatorInfix :Math]}
-   {:name :binary-minus :s "-" :f '- :c :infix :a 2 :e [:OperatorInfix :Math]}
-   {:name :binary-exp :s "^" :f '** :c :infix :a 2 :e [:OperatorInfix :Math]}
+   {:name :binary-mult :s "*" :f 'functions/fn-multiply :c :infix :a 2 :e [:OperatorInfix :Math]}
+   {:name :binary-div :s "/" :f 'functions/fn-divide  :c :infix :a 2 :e [:OperatorInfix :Math]}
+   {:name :binary-plus :s "+" :f 'functions/fn-add :c :infix :a 2 :e [:OperatorInfix :Math]}
+   {:name :binary-minus :s "-" :f 'functions/fn-subtract :c :infix :a 2 :e [:OperatorInfix :Math]}
+   {:name :binary-exp :s "^" :f 'functions/fn-exponent :c :infix :a 2 :e [:OperatorInfix :Math]}
    {:name :binary-concat :s "&" :f 'functions/fn-concat :c :infix :a 2 :e [:OperatorInfix :Concatenation]} ; what should this do? There are coercions to text in Excel
 
-   {:name :compare-eq :s "=" :f 'functions/fn-equal :c :infix :a 2 :e [:OperatorInfix :Logical]}
-   {:name :compare-gt :s ">" :f '> :c :infix :a 2 :e [:OperatorInfix :Logical]}
-   {:name :compare-lt :s "<" :f '< :c :infix :a 2 :e [:OperatorInfix :Logical]}
-   {:name :compare-gte :s ">=" :f '>= :c :infix :a 2 :e [:OperatorInfix :Logical]}
-   {:name :compare-lte :s "<=" :f '<= :c :infix :a 2 :e [:OperatorInfix :Logical]}
-   {:name :compare-neq :s "<>" :f 'not= :c :infix :a 2 :e [:OperatorInfix :Logical]}
+   {:name :compare-eq :s "=" :f 'functions/fn-equal? :c :infix :a 2 :e [:OperatorInfix :Logical]}
+   {:name :compare-gt :s ">" :f 'functions/fn-gt? :c :infix :a 2 :e [:OperatorInfix :Logical]}
+   {:name :compare-lt :s "<" :f 'functions/fn-lt? :c :infix :a 2 :e [:OperatorInfix :Logical]}
+   {:name :compare-gte :s ">=" :f 'functions/fn-gt-equal? :c :infix :a 2 :e [:OperatorInfix :Logical]}
+   {:name :compare-lte :s "<=" :f 'functions/fn-lt-equal? :c :infix :a 2 :e [:OperatorInfix :Logical]}
+   {:name :compare-neq :s "<>" :f 'functions/fn-not-equal? :c :infix :a 2 :e [:OperatorInfix :Logical]}
 
    {:name :index :s "index" :f 'functions/fn-index :c :args :a :all :e [:Function :Start]}
 

@@ -1,3 +1,7 @@
+;; Taken with gratitude from StackOverflow answer 
+;; https://stackoverflow.com/a/20724760/3864577
+;; by jbm
+
 (ns box
   (:import [java.io Writer]))
 

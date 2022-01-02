@@ -5,6 +5,7 @@
    [ast-processing :as ast]
    [excel :as excel]
    [graph :as graph]
+   [ubergraph.core :as uber]
    [functions]))
 
 (defn compare-ok? [{:keys [value result] :as r-map}]
@@ -263,6 +264,17 @@
   
   (graph/explain-workbook "TEST1.xlsx" "Sheet2")
 
+  (-> "INITIAL-TEST.xlsx" ; simpler workbook with a smaller graph
+      (graph/explain-workbook "Sheet2")
+      (graph/get-cell-dependencies)
+      (graph/add-graph)
+      (graph/connect-disconnected-regions)
+      :graph
+      (uber/viz-graph))
+
+  (-> (graph/explain-workbook "TEST1.xlsx" "Sheet2")
+      (get-in ["Sheet2" :cells]))
+
   (def WB-MAP
     (-> "TEST1.xlsx"
         (graph/explain-workbook "Sheet2")
@@ -275,6 +287,8 @@
   (graph/expand-cell-range "Sheet2!BONUS" WB-MAP)
 
   (graph/eval-range "Sheet2!H4:H6" WB-MAP)
+
+  @(graph/eval-range "Sheet2!H4:H6" WB-MAP)
 
   (graph/eval-range "Sheet2!$L$4:$N$6" WB-MAP)
 

@@ -149,8 +149,8 @@
   "Convert an Excel serial date to a local date time instance"
   [excel-serial-date]
   (DateUtil/getJavaDate
-   excel-serial-date
-   (TimeZone/getTimeZone "UTC")))
+   ^double excel-serial-date
+   ^java.util.TimeZone (TimeZone/getTimeZone "UTC")))
 
 (defn string->local-date-time
   "Convert a string to a local datetime object"
