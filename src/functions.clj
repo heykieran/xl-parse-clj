@@ -6,9 +6,10 @@
    [expressions :as expressions]
    [clojure.math.numeric-tower :as math])
   (:import
-   [java.time LocalDateTime]
+   [java.time LocalDateTime ZoneId]
    [java.util Calendar Calendar$Builder]
    [org.apache.poi.ss.util CellReference]
+   [org.apache.poi.ss.formula.functions Finance]
    [box Box]))
 
 (defn fn-equal?
@@ -85,7 +86,7 @@
         v2-value (if (instance? Box v2) @v2 v2)]
     (not= v1-value v2-value)))
 
-(defn abs [v]
+(defn fn-abs [v]
   (if (neg? v)
     (- v)
     v))
@@ -114,7 +115,7 @@
 (defn fn-not [v]
   (not (v->boolean v)))
 
-(defn prcnt [v]
+(defn fn-prcnt [v]
   (/ (bigdec v) 100.0M))
 
 (defn pi []
@@ -122,6 +123,59 @@
 
 (defn fn-concat [& vs]
   (apply str (map #(if (instance? Box %) @% %) vs)))
+
+(defn fn-mod [n d]
+  (mod n d))
+
+(defn fn-sign [^double n]
+  (cond (zero? n)
+        0
+        (neg? n)
+        -1
+        :else
+        1))
+
+(defn fn-round 
+  ([^double n ^long p]
+   (fn-round n p java.math.RoundingMode/HALF_UP))
+  ([^double n ^long p ^long rounding-mode]
+  (if (or (Double/isNaN n)
+          (Double/isInfinite n))
+    Double/NaN
+    (-> n
+        (java.math.BigDecimal/valueOf)
+        (.setScale p rounding-mode)
+        (.doubleValue)))))
+
+(defn fn-roundup [^double n ^long p]
+  (fn-round n p java.math.RoundingMode/UP))
+
+(defn fn-rounddown [^double n ^long p]
+  (fn-round n p java.math.RoundingMode/DOWN))
+
+(defn fn-floor [^double n ^double s]
+  (if (and (zero? s) (not (zero? n)))
+    Double/NaN
+    (if (or (zero? n)
+            (zero? s))
+      0
+      (* s (Math/floor (/ n s))))))
+
+(defn fn-ceiling [^double n ^double s]
+  (if (and (pos? n) (neg? s))
+    Double/NaN
+    (if (or (zero? n)
+            (zero? s))
+      0
+      (* s (Math/ceil (/ n s))))))
+
+(defn fn-pmt 
+  ([rate nper pv]
+   (fn-pmt rate nper pv 0 0))
+  ([rate nper pv fv]
+   (fn-pmt rate nper pv fv 0))
+  ([rate nper pv fv c-type]
+   (Finance/pmt rate nper pv (or fv 0) (or c-type 0))))
 
 (defn fn-search [look-for-str in-str & [starting-at]]
   (cond
@@ -172,8 +226,8 @@
 (defn fn-counta [& vs]
   (let [values (flatten (map #(if (instance? Box %) (deref %) %) vs))]
     (-> (keep #(when (not (str/blank? (str %))) %) values)
-      (count)
-      (float))))
+        (count)
+        (float))))
 
 (defn fn-average [& vs]
   (/ (apply fn-sum vs)
@@ -235,6 +289,30 @@
       2. (math/abs (/ (- d1 d2) 360.))
       3. (math/abs (/ (- d1 d2) 365.))
       4. (excel/euro-360-diff d1 d2))))
+
+(defn fn-year [date-serial]
+  (-> date-serial
+      (excel/build-calendar-for-serial-date)
+      (excel/extract-date-fields)
+      (nth 0)))
+
+(defn fn-month [date-serial]
+  (-> date-serial
+      (excel/build-calendar-for-serial-date)
+      (excel/extract-date-fields)
+      (nth 1)))
+
+(defn fn-day [date-serial]
+  (-> date-serial
+      (excel/build-calendar-for-serial-date)
+      (excel/extract-date-fields)
+      (nth 2)))
+
+(defn fn-eomonth [date-serial months]
+  (excel/advance-and-get-end-of-month date-serial months))
+
+(defn fn-edate [date-serial months]
+  (excel/advance-and-get-date date-serial months))
 
 (defn- is-multi-range? [lookup-range-or-reference]
   (cond (meta lookup-range-or-reference)
@@ -439,7 +517,7 @@
              ((fn [s] (str "(?i)" s)))
              (re-pattern)))]
     (some-> comp-string
-            (fn-equal re)
+            (fn-equal? re)
             (some?)
             (not= false))))
 
@@ -529,7 +607,7 @@
 (comment (excel/ref-str->ref-str-using-offset "D3" -3 -3))
 
 (defn fn-vlookup [& [lookup-value table-array-as-vector col-index range-lookup]]
-  (assert (= 1 (-> table-array-as-vector (meta) :areas (count))) 
+  (assert (= 1 (-> table-array-as-vector (meta) :areas (count)))
           "Only expecting one area in meta data for fn-vlookup")
   (let [table-array (-> table-array-as-vector convert-vector-to-table (first))
         r-val (some

@@ -5,7 +5,7 @@
    [clojure.math.numeric-tower :as math])
   (:import
    [java.util Locale TimeZone Calendar Calendar$Builder]
-   [java.time LocalDate LocalTime LocalDateTime]
+   [java.time LocalDate LocalTime LocalDateTime ZoneId]
    [java.time.format DateTimeFormatter]
    [java.text DateFormatSymbols]
    [org.apache.poi.util LocaleUtil]
@@ -108,8 +108,7 @@
 (defn local-date-time->excel-serial-date
   "Convert a local date time to an Excel serial date"
   [ldt]
-  (DateUtil/getExcelDate
-   ldt))
+  (DateUtil/getExcelDate ldt))
 
 (defn parse-excel-string-to-serial-date [date-str]
   (if-let [{:keys [pattern-name pattern-style date]}
@@ -223,6 +222,48 @@
         [Calendar/YEAR Calendar/MONTH Calendar/DAY_OF_MONTH
          Calendar/HOUR_OF_DAY Calendar/MINUTE Calendar/SECOND
          Calendar/MILLISECOND]))
+
+(defn- advance-by-months
+  "Given an excel serial date add/subtract the number of 
+   months and result as a serial date. If set-eom? is
+   truthy advance the returned date to the end of the 
+   calculated month"
+  [serial-date months & [set-eom?]]
+  (let [cal (-> serial-date
+                (excel/build-calendar-for-serial-date)
+                (doto
+                 (.add Calendar/MONTH months)))
+        eom-date (.getActualMaximum cal Calendar/DAY_OF_MONTH)
+        adj-cal (if set-eom?
+                  (doto cal
+                    (.set Calendar/DAY_OF_MONTH eom-date))
+                  cal)]
+    (-> adj-cal
+        (.getTime)
+        (.toInstant)
+        (.atZone (ZoneId/of "Z"))
+        (.toLocalDate)
+        (excel/local-date-time->excel-serial-date))))
+
+(defn advance-and-get-end-of-month
+  "Given an excel serial date add/subtract the number of 
+   months and return the serial date representing the last
+   day of the resultant month.
+   e.g. (advance-and-get-end-of-month (fn-date 2020 1 15) 1) should
+   return the serial date value for 2/29/2020"
+  [serial-date months]
+  (advance-by-months serial-date months true))
+
+(defn advance-and-get-date
+  "Given an excel serial date add/subtract the number of 
+   months and return the serial date"
+  [serial-date months]
+  (advance-by-months serial-date months false))
+
+(comment 
+  (advance-by-months 43000.0 2)
+  (advance-by-months 43000.0 2 true)
+  :end)
 
 (defn date-vecs->nasd-date
   "Given two vectors containing year, month and day representing a start date and

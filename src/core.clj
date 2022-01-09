@@ -6,7 +6,8 @@
    [excel :as excel]
    [graph :as graph]
    [ubergraph.core :as uber]
-   [functions]))
+   [functions]
+   [clojure.math.numeric-tower :as math]))
 
 (defn compare-ok? [{:keys [value result] :as r-map}]
   (if (and (number? result) (number? value))
@@ -228,7 +229,7 @@
       (ast/process-tree)
       (sh/parse-expression-tokens)
       (ast/unroll-for-code-form))
-
+  
   (->> (run-tests)
        (filter #(false? (:ok? %))))
 
