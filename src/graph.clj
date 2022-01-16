@@ -14,7 +14,10 @@
   (:import
    [org.apache.poi.ss SpreadsheetVersion]
    [org.apache.poi.ss.util AreaReference]
-   [org.apache.poi.ss.usermodel CellType DateUtil]
+   [org.apache.poi.ss.usermodel CellType DateUtil Name SheetVisibility]
+   [org.apache.poi.xssf.usermodel XSSFName XSSFEvaluationWorkbook]
+   [org.apache.poi.ss.formula FormulaParser FormulaType]
+   [org.apache.poi.ss.formula.ptg Ptg]
    [box Box]))
 
 (declare ^:dynamic *context*)
@@ -36,7 +39,7 @@
               :cols (inc (apply - (sort > [l-col f-col])))
               :rows (inc (apply - (sort > [l-row f-row])))}]}))
 
-(defn get-named-ranges-from-wb-map 
+(defn get-named-ranges-from-wb-map
   "For each sheet access its named ranges and consolidate
    into a single sequence."
   [wb-map]
@@ -46,7 +49,12 @@
    wb-map))
 
 (defn get-named-range-description-map [named-ranges cell-name]
-  (when (and named-ranges (-> cell-name (AreaReference. SpreadsheetVersion/EXCEL2007) (.isSingleCell)))
+  (tap> {:loc get-named-range-description-map
+         :named-ranges named-ranges
+         :cell-name cell-name})
+  (when (and named-ranges (-> cell-name
+                              (AreaReference. SpreadsheetVersion/EXCEL2007)
+                              (.isSingleCell)))
     (some (fn [{:keys [name sheet] :as named-range}]
             (when (= cell-name (str sheet "!" name))
               named-range))
@@ -121,17 +129,145 @@
             cell))
         cells))
 
-(defn explain-named-ranges-in-workbook [wb-as-resource]
+(defn explain-named-ranges-in-workbook
+  "Naive attempt to get information about all the named ranges in the workbook.
+   Currently can't handle hidden named ranges which causes problems.
+   Returns a map with keys :named-ranges and :warnings, each containing
+   a vector of information about the named ranges in the WB.
+   :warnings will always be nil."
+  [wb-as-resource]
   (->>
    wb-as-resource
    (.getAllNames)
    (map (fn [n]
           {:name (.getNameName n)
            :sheet (.getSheetName n)
-           :references (expand-cell-range (.getRefersToFormula n))}))))
+           :references (expand-cell-range (.getRefersToFormula n))}))
+   ((fn [n-ranges]
+      {:named-ranges n-ranges
+       :warnings nil}))))
+
+(defn explain-named-ranges-in-workbook-ext
+  "Get information about all the named ranges in the workbook.
+   Returns a map with keys :named-ranges and :warnings, each containing
+   a vector of information about the named ranges in the WB.
+   :warnings is used to contain information about named ranges that we
+   don't know how to handle yet."
+  [wb-as-resource]
+  (let
+   [evaluation-wb (->> wb-as-resource (XSSFEvaluationWorkbook/create))
+    ;; use reflection to get a reference to the getCTCName method, which
+    ;; is private
+    name-hidden-method (-> XSSFName
+                           (.getDeclaredMethod
+                            "getCTName"
+                            (into-array Class nil))
+                           (doto (.setAccessible true)))]
+    (->>
+     wb-as-resource
+     (.getAllNames)
+     (reduce (fn [accum ^Name n]
+               ;; ignore deleted names and hidden names
+               (if (and (not (.isDeleted n))
+                        (not (-> name-hidden-method
+                                 (.invoke n (into-array Object nil))
+                                 (.getHidden))))
+                 ;; parse the formula, future work so we can
+                 ;; use named ranges pointing to values rather to other
+                 ;; cells. Currently, any weirdness will end up in the 
+                 ;; :warning value of the returned map
+                 (let [ptgs (FormulaParser/parse
+                             (.getRefersToFormula n)
+                             evaluation-wb
+                             FormulaType/CELL
+                             (.getSheetIndex n))
+                       sheet-visibility
+                       (if (not= -1 (.getSheetIndex n))
+                         (-> wb-as-resource
+                             (.getSheetVisibility
+                              (.getSheetIndex n))
+                             ((fn [^SheetVisibility vis]
+                                (cond
+                                  (= vis SheetVisibility/HIDDEN) :hidden
+                                  (= vis SheetVisibility/VERY_HIDDEN) :very-hidden
+                                  (= vis SheetVisibility/VISIBLE) :visible))))
+                         :not-applicable)
+                       ;; see if we can convert the formula to a contiguous area, returns
+                       ;; nil if we can't
+                       contiguous-area-ref (try (AreaReference/generateContiguous
+                                                 SpreadsheetVersion/EXCEL2007
+                                                 (.getRefersToFormula n))
+                                                (catch Exception e
+                                                  nil))
+                       ;; get a list of refed sheets, check later that only
+                       ;; one is returned
+                       refed-sheets (when contiguous-area-ref
+                                      (mapcat
+                                       (fn [a]
+                                         (reduce (fn [accum c]
+                                                   (let [[s _ _] (.getCellRefParts c)]
+                                                     (conj accum s)))
+                                                 #{}
+                                                 (.getAllReferencedCells a)))
+                                       contiguous-area-ref))
+                       refed-sheet-names (mapv (fn [s]
+                                                 (try (-> wb-as-resource
+                                                          (.getSheet s)
+                                                          (.getSheetName))
+                                                      (catch Exception e
+                                                        "##INVALID SHEET##")))
+                                               refed-sheets)]
+                   ;; if everything looks normal, add what we know about the 
+                   ;; named range to the :named-ranges vector
+                   (if (and (= 1 (count contiguous-area-ref))
+                            (= 1 (count refed-sheets))
+                            (= 1 (count refed-sheet-names))
+                            (= 1 (count ptgs)))
+                     (update accum :named-ranges
+                             (fnil conj [])
+                             {:name (.getNameName n)
+                              :contiguous-ref (-> contiguous-area-ref (first) (.formatAsString))
+                              :visibility sheet-visibility
+                              :formula (.getRefersToFormula n)
+                              :function (.getFunction n)
+                              :index (.getSheetIndex n)
+                              :refers-to-sheets (first refed-sheets)
+                              :refers-to-sheet-names (first refed-sheet-names)
+                              :parsed-formula (->>
+                                               ptgs
+                                               (mapv identity)
+                                               (first))
+                              :refers-to-deleted-cells (Ptg/doesFormulaReferToDeletedCell ptgs)
+                              :sheet-name-for-index (try (.getSheetName n) (catch Exception e :no-name))
+                              :references (graph/expand-cell-range (.getRefersToFormula n))})
+                     ;; something deosn't look right so add what we know to the
+                     ;; :warnings vector
+                     ;; TODO: If we find a named range that refers to a value or
+                     ;; a formula, it will end up here. I need to make sure we can
+                     ;; use those too
+                     (update accum :warnings
+                             (fnil conj [])
+                             {:name (.getNameName n)
+                              :contiguous-ref contiguous-area-ref
+                              :visibility sheet-visibility
+                              :formula (.getRefersToFormula n)
+                              :function (.getFunction n)
+                              :index (.getSheetIndex n)
+                              :refers-to-sheets refed-sheets
+                              :refers-to-sheet-names refed-sheet-names
+                              :parsed-formula (->>
+                                               ptgs
+                                               (mapv identity))
+                              :refers-to-deleted-cells (Ptg/doesFormulaReferToDeletedCell ptgs)
+                              :sheet-name-for-index (try (.getSheetName n) (catch Exception e :no-name))
+                              :references nil})))
+                 accum))
+             {}))))
 
 (defn explain-cells-in-sheet [wb-as-resource sheet-name]
-  (let [named-ranges (explain-named-ranges-in-workbook wb-as-resource)]
+  (let [named-ranges (-> wb-as-resource
+                         (explain-named-ranges-in-workbook-ext)
+                         (:named-ranges))]
     (->> wb-as-resource
          (dk/select-sheet sheet-name)
          dk/cell-seq
@@ -353,7 +489,7 @@
        form))
    unsubstituted-form))
 
-(defn construct-dynamic-range-for-range-operator 
+(defn construct-dynamic-range-for-range-operator
   [forms]
   (letfn [(->fn [f]
             (if (var? (eval f))
@@ -395,7 +531,7 @@
    Excel, accommodating different types and some tolerance for
    rounding for numbers"
   [v1 v2]
-  (let [v1-value (if (instance? Box v1) @v1 v1) 
+  (let [v1-value (if (instance? Box v1) @v1 v1)
         v2-value (if (instance? Box v2) @v2 v2)
         numbers? (and (number? v1-value) (number? v2-value))
         compatible?
@@ -407,11 +543,11 @@
           (and numbers? (< (math/abs (- v1-value v2-value)) 0.0000001M)))
       false
       #_(throw (Exception.
-              (str "Invalid comparison values: "
-                   v1 " [" (type v1) "], "
-                   v2 " [" (type v2) "]"))))))
+                (str "Invalid comparison values: "
+                     v1 " [" (type v1) "], "
+                     v2 " [" (type v2) "]"))))))
 
-(comment 
+(comment
   (results-equal? 1 1)
   (results-equal? 1. 1)
   (results-equal? 1. "1")
@@ -431,7 +567,7 @@
                 (= 'partial (ffirst f))
                 (= 'functions/fn-indirect (-> f (first) (second))))
            (list 'eval-range f)
-           (and false 
+           (and false
                 (list? f)
                 (list? (first f))
                 (= 'partial (ffirst f))
@@ -472,12 +608,12 @@
                                            (-> final-code
                                                (eval)))]
                    #_(tap> {:base-code formula-code
-                          :indirected-code formula-code-with-indirection
-                          :final-code final-code})
+                            :indirected-code formula-code-with-indirection
+                            :final-code final-code})
                    (conj
                     accum
-                    [node (results-equal? value calculated-result) 
-                     formula value final-code 
+                    [node (results-equal? value calculated-result)
+                     formula value final-code
                      (if (instance? Box calculated-result) @calculated-result calculated-result)]))
                  accum)))
            []
@@ -541,7 +677,7 @@
       (connect-disconnected-regions)
       (recalc-workbook "Scores")
       (simplify-results))
-  
+
   (def WB-MAP
     (-> "TEST-cyclic.xlsx"
         (explain-workbook "Sheet1")
