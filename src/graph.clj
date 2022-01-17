@@ -13,7 +13,7 @@
    [clojure.walk :as walk])
   (:import
    [org.apache.poi.ss SpreadsheetVersion]
-   [org.apache.poi.ss.util AreaReference]
+   [org.apache.poi.ss.util AreaReference CellReference CellReference$NameType]
    [org.apache.poi.ss.usermodel CellType DateUtil Name SheetVisibility]
    [org.apache.poi.xssf.usermodel XSSFName XSSFEvaluationWorkbook]
    [org.apache.poi.ss.formula FormulaParser FormulaType]
@@ -21,6 +21,60 @@
    [box Box]))
 
 (declare ^:dynamic *context*)
+
+(defn looks-like-valid-cell-reference?
+  "Check if the refstr (2D reference) looks valid.
+  The refstr should be 'raw', i.e. no $ or :, just 
+  letters and numbers, so be careful what you pass."
+  [refstr]
+  (if (re-matches #"^[A-Za-z]+\d+$" refstr)
+    (try
+      (let [c-str (str/replace refstr #"\d" "")
+            r-str (str/replace refstr #"[A-Za-z]" "")]
+        (CellReference/cellReferenceIsWithinRange c-str r-str SpreadsheetVersion/EXCEL2007))
+      (catch NumberFormatException _
+        false))
+    false))
+
+(defn convert-to-2d-ref
+  "Convert refstr to a raw 2d ref i.e. just with
+  column chars followed by numbers, (if they exist, 
+  it might just be a complete row or column)
+  or return nil if not possible."
+  [refstr]
+  (try
+    (-> refstr
+        (CellReference.)
+        (.getCellRefParts)
+        ((fn [[_ r c]] (str c r)))
+        (CellReference.)
+        (.formatAsString))
+    (catch IllegalArgumentException _
+      nil)))
+
+(defn classify-cell-reference-type [ct]
+  (cond
+    (= CellReference$NameType/BAD_CELL_OR_NAMED_RANGE ct)
+    :bad-refstr
+    (= CellReference$NameType/CELL ct)
+    :cell
+    (= CellReference$NameType/COLUMN ct)
+    :column
+    (= CellReference$NameType/NAMED_RANGE ct)
+    :named-range
+    (= CellReference$NameType/ROW ct)
+    :row))
+
+(defn classify-cell-reference-str
+  "Given a cell reference str, which may contain a sheet
+   identifier return the type of cell reference as a
+   keyword (:bad-refstr, :cell, :column, :named-range, 
+   or :row)"
+  [refstr]
+  (-> refstr
+      (convert-to-2d-ref)
+      (CellReference/classifyCellReference SpreadsheetVersion/EXCEL2007)
+      (classify-cell-reference-type)))
 
 (defn range-metadata [cell-range-str]
   (let [aref (AreaReference. cell-range-str SpreadsheetVersion/EXCEL2007)
@@ -49,16 +103,18 @@
    wb-map))
 
 (defn get-named-range-description-map [named-ranges cell-name]
-  (tap> {:loc get-named-range-description-map
-         :named-ranges named-ranges
-         :cell-name cell-name})
-  (when (and named-ranges (-> cell-name
+  (when (and named-ranges #_(-> cell-name
                               (AreaReference. SpreadsheetVersion/EXCEL2007)
                               (.isSingleCell)))
-    (some (fn [{:keys [name sheet] :as named-range}]
-            (when (= cell-name (str sheet "!" name))
-              named-range))
-          named-ranges)))
+    (->> named-ranges
+         (reduce (fn [accum {:keys [name sheet index] :as named-range}]
+                   (if (= cell-name (str sheet "!" name))
+                     (assoc accum index named-range)
+                     accum))
+                 {})
+         (vals)
+         (sort-by :index >)
+         (first))))
 
 (defn expand-cell-range
   ([cell-range-str]
@@ -71,6 +127,7 @@
                 :label (str col-name row-name)
                 :type :general}))]
      (if-let [named-range (-> wb-map
+                              ;; TODO : Scoped named ranges
                               (get-named-ranges-from-wb-map)
                               (get-named-range-description-map cell-range-str))]
        (:references named-range)
@@ -130,24 +187,6 @@
         cells))
 
 (defn explain-named-ranges-in-workbook
-  "Naive attempt to get information about all the named ranges in the workbook.
-   Currently can't handle hidden named ranges which causes problems.
-   Returns a map with keys :named-ranges and :warnings, each containing
-   a vector of information about the named ranges in the WB.
-   :warnings will always be nil."
-  [wb-as-resource]
-  (->>
-   wb-as-resource
-   (.getAllNames)
-   (map (fn [n]
-          {:name (.getNameName n)
-           :sheet (.getSheetName n)
-           :references (expand-cell-range (.getRefersToFormula n))}))
-   ((fn [n-ranges]
-      {:named-ranges n-ranges
-       :warnings nil}))))
-
-(defn explain-named-ranges-in-workbook-ext
   "Get information about all the named ranges in the workbook.
    Returns a map with keys :named-ranges and :warnings, each containing
    a vector of information about the named ranges in the WB.
@@ -238,7 +277,7 @@
                                                (mapv identity)
                                                (first))
                               :refers-to-deleted-cells (Ptg/doesFormulaReferToDeletedCell ptgs)
-                              :sheet-name-for-index (try (.getSheetName n) (catch Exception e :no-name))
+                              :sheet (try (.getSheetName n) (catch Exception e :no-name))
                               :references (graph/expand-cell-range (.getRefersToFormula n))})
                      ;; something deosn't look right so add what we know to the
                      ;; :warnings vector
@@ -259,22 +298,25 @@
                                                ptgs
                                                (mapv identity))
                               :refers-to-deleted-cells (Ptg/doesFormulaReferToDeletedCell ptgs)
-                              :sheet-name-for-index (try (.getSheetName n) (catch Exception e :no-name))
+                              :sheet (try (.getSheetName n) (catch Exception e :no-name))
                               :references nil})))
                  accum))
              {}))))
 
 (defn explain-cells-in-sheet [wb-as-resource sheet-name]
   (let [named-ranges (-> wb-as-resource
-                         (explain-named-ranges-in-workbook-ext)
+                         (explain-named-ranges-in-workbook)
                          (:named-ranges))]
     (->> wb-as-resource
          (dk/select-sheet sheet-name)
          dk/cell-seq
          (explain-sheet-cells sheet-name)
-         (add-references sheet-name {sheet-name {:named-ranges named-ranges}})
+         (add-references sheet-name 
+                         {sheet-name {:named-ranges named-ranges}})
          ((fn [r]
-            {:named-ranges named-ranges
+            {:named-ranges (->> named-ranges
+                                (filterv #(or (= sheet-name (:sheet %))
+                                              (= -1 (:index %)))))
              :cells r})))))
 
 (defn explain-workbook

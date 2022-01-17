@@ -103,8 +103,12 @@ which maps the excel formula symbol `"average"` to the clojure `functions/fn-ave
 
 The order of the definitions in the `OPERATORS-PRECEDENCE` vector also determines the precedence of the operators when being processed by the shunting-yard algorithm. Furthermore, the `:a` field in the definition lets the parser know how many arguments to expect.
 
-> As of this writing all Excel's mathematical and logical operators have been implemented, as well as the following functions `abs`, `sin`, `true`, `false`, `and`, `or`, `max`, `min`, `pi`, `now`, `date`, `days`, `datevalue`, `yearfrac`,
-  `sum`, `average`, `count`, `counta`, `sumif`, `averageif`, `countif`, `search`, `concatenate`, `index`, `match`, `indirect`, `offset`, `vlookup` & `if`. Others will be added as time allows.
+> As of this writing all Excel's mathematical and logical operators have been implemented, as well as the following functions `abs`, `sin`, `true`, `false`, 
+ `and`, `or`, `not`, `max`, `min`, `pi`, `ceiling`, `floor`, `round`, `roundup`, 
+ `rounddown`, `mod`, `sign`, `now`, `date`, `days`, `datevalue`, `yearfrac`, 
+ `year`, `month`, `day`, `eomonth`, `edate`, `pmt`, `sum`, `average`, `count`,
+  `counta`, `sumif`, `averageif`, `countif`, `search`, `concatenate`, `index`,
+   `match`, `indirect`, `offset`, `vlookup` & `if`.  Others will be added as time allows.
   
 As an example 
 

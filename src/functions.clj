@@ -588,21 +588,27 @@
                       (excel/ref-str->ref-str-using-offset
                        base-cell
                        rows cols))
-        target-value (when (not= excel/REF-ERROR target-cell)
-                       (graph/eval-range (str sheet-name "!" target-cell) context))]
+        target-cell-2 (when base-cell
+                        (excel/ref-str->ref-str-using-offset
+                         base-cell
+                         (+ rows (dec (or height 1))) (+ cols (dec (or width 1)))))
+        target-value (when (and (not= excel/REF-ERROR target-cell)
+                                (not= excel/REF-ERROR target-cell-2))
+                       (if (= target-cell target-cell-2)
+                         (graph/eval-range (str sheet-name "!" target-cell) context)
+                         (graph/eval-range (str sheet-name "!" target-cell ":" target-cell-2) context)))]
     (tap> {:loc fn-offset
            :sheet-name sheet-name
-           :reference reference
            :meta (meta reference)
-           :table (convert-vector-to-table reference)
            :base-cell base-cell
            :target-cell target-cell
+           :target-cell-2 target-cell-2
            :target-value target-value
            :rows rows
            :cols cols
            :height height
-           :width width}))
-  1)
+           :width width})
+    target-value))
 
 (comment (excel/ref-str->ref-str-using-offset "D3" -3 -3))
 
