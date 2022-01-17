@@ -5,13 +5,15 @@
    [clojure.math.numeric-tower :as math])
   (:import
    [java.util Locale TimeZone Calendar Calendar$Builder]
-   [java.time LocalDate LocalTime LocalDateTime]
+   [java.time LocalDate LocalTime LocalDateTime ZoneId]
    [java.time.format DateTimeFormatter]
    [java.text DateFormatSymbols]
    [org.apache.poi.util LocaleUtil]
+   [org.apache.poi.ss.util CellReference]
    [org.apache.poi.ss.usermodel CellType DateUtil]))
 
 (def VALUE-ERROR "#VALUE!")
+(def REF-ERROR "#REF!")
 
 (def PATTERNS
   [[:YMD-DASHES {:r #"^(\d{4})-(\w+)-(\d{1,2})( .*)?$", :s "ymd" :m-type :num}]
@@ -106,8 +108,7 @@
 (defn local-date-time->excel-serial-date
   "Convert a local date time to an Excel serial date"
   [ldt]
-  (DateUtil/getExcelDate
-   ldt))
+  (DateUtil/getExcelDate ldt))
 
 (defn parse-excel-string-to-serial-date [date-str]
   (if-let [{:keys [pattern-name pattern-style date]}
@@ -147,8 +148,8 @@
   "Convert an Excel serial date to a local date time instance"
   [excel-serial-date]
   (DateUtil/getJavaDate
-   excel-serial-date
-   (TimeZone/getTimeZone "UTC")))
+   ^double excel-serial-date
+   ^java.util.TimeZone (TimeZone/getTimeZone "UTC")))
 
 (defn string->local-date-time
   "Convert a string to a local datetime object"
@@ -221,6 +222,48 @@
         [Calendar/YEAR Calendar/MONTH Calendar/DAY_OF_MONTH
          Calendar/HOUR_OF_DAY Calendar/MINUTE Calendar/SECOND
          Calendar/MILLISECOND]))
+
+(defn- advance-by-months
+  "Given an excel serial date add/subtract the number of 
+   months and result as a serial date. If set-eom? is
+   truthy advance the returned date to the end of the 
+   calculated month"
+  [serial-date months & [set-eom?]]
+  (let [cal (-> serial-date
+                (excel/build-calendar-for-serial-date)
+                (doto
+                 (.add Calendar/MONTH months)))
+        eom-date (.getActualMaximum cal Calendar/DAY_OF_MONTH)
+        adj-cal (if set-eom?
+                  (doto cal
+                    (.set Calendar/DAY_OF_MONTH eom-date))
+                  cal)]
+    (-> adj-cal
+        (.getTime)
+        (.toInstant)
+        (.atZone (ZoneId/of "Z"))
+        (.toLocalDate)
+        (excel/local-date-time->excel-serial-date))))
+
+(defn advance-and-get-end-of-month
+  "Given an excel serial date add/subtract the number of 
+   months and return the serial date representing the last
+   day of the resultant month.
+   e.g. (advance-and-get-end-of-month (fn-date 2020 1 15) 1) should
+   return the serial date value for 2/29/2020"
+  [serial-date months]
+  (advance-by-months serial-date months true))
+
+(defn advance-and-get-date
+  "Given an excel serial date add/subtract the number of 
+   months and return the serial date"
+  [serial-date months]
+  (advance-by-months serial-date months false))
+
+(comment 
+  (advance-by-months 43000.0 2)
+  (advance-by-months 43000.0 2 true)
+  :end)
 
 (defn date-vecs->nasd-date
   "Given two vectors containing year, month and day representing a start date and
@@ -360,6 +403,39 @@
     (= CellType/ERROR (.getCellType c)) :error
     :else
     :unknown))
+
+(defn ref-str->row-col
+  [^String ref-str]
+  (-> ref-str
+      (CellReference.)
+      ((juxt (memfn ^CellReference getRow) (memfn ^CellReference getCol)))))
+
+(defn row-col->ref-str
+  ([[row col :as rc-tuple]]
+   (row-col->ref-str row col))
+  ([^long row ^long col]
+   (if (and (<= 0 row 1048576)
+            (<= 0 col 16384))
+     (-> (CellReference. row col)
+         (.formatAsString false))
+     REF-ERROR)))
+
+(defn ref-str->ref-str-using-offset
+  [ref-str row-offset col-offset]
+  (let [[row col] (ref-str->row-col ref-str)]
+    (-> [(+ row row-offset)
+         (+ col col-offset)]
+        (row-col->ref-str))))
+
+(comment
+  (ref-str->row-col "A1")
+  (row-col->ref-str 6 3)
+  (row-col->ref-str [6 3])
+  (ref-str->ref-str-using-offset "D7" -1 -1)
+  (ref-str->row-col "D3")
+  (row-col->ref-str [-1 0])
+  (ref-str->ref-str-using-offset "D3" -3 -3)
+  :end)
 
 (defn extract-test-formulas
   "Extract some test formulas and results from an Excel Workbook.

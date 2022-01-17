@@ -3,26 +3,30 @@
             [clojure.walk :as walk]))
 
 (def OPERATORS-PRECEDENCE
-  [{:name :unary-plus :s "+" :f '+ :c :prefix :a 1 :e [:OperatorPrefix nil]}
-   {:name :unary-minus :s "-" :f '- :c :prefix :a 1 :e [:OperatorPrefix nil]}
+  [{:name :unary-plus :s "+" :f 'functions/fn-unary-plus :c :prefix :a 1 :e [:OperatorPrefix nil]}
+   {:name :unary-minus :s "-" :f 'functions/fn-unary-minus :c :prefix :a 1 :e [:OperatorPrefix nil]}
 
-   {:name :unary-prcnt :s "%" :f 'functions/prcnt :c :postfix :a 1 :e [:OperatorPostfix nil]}
+   {:name :unary-prcnt :s "%" :f 'functions/fn-prcnt :c :postfix :a 1 :e [:OperatorPostfix nil]}
 
-   {:name :binary-mult :s "*" :f '* :c :infix :a 2 :e [:OperatorInfix :Math]}
-   {:name :binary-div :s "/" :f '/  :c :infix :a 2 :e [:OperatorInfix :Math]}
-   {:name :binary-plus :s "+" :f '+ :c :infix :a 2 :e [:OperatorInfix :Math]}
-   {:name :binary-minus :s "-" :f '- :c :infix :a 2 :e [:OperatorInfix :Math]}
-   {:name :binary-exp :s "^" :f '** :c :infix :a 2 :e [:OperatorInfix :Math]}
-   {:name :binary-concat :s "&" :f 'str :c :infix :a 2 :e [:OperatorInfix :Concatenation]} ; what should this do? There are coercions to text in Excel
+   {:name :union :s "," :f 'functions/fn-union :c :infix :a :all :e [:OperatorInfix :Union]}
 
-   {:name :compare-eq :s "=" :f 'functions/fn-equal :c :infix :a 2 :e [:OperatorInfix :Logical]}
-   {:name :compare-gt :s ">" :f '> :c :infix :a 2 :e [:OperatorInfix :Logical]}
-   {:name :compare-lt :s "<" :f '< :c :infix :a 2 :e [:OperatorInfix :Logical]}
-   {:name :compare-gte :s ">=" :f '>= :c :infix :a 2 :e [:OperatorInfix :Logical]}
-   {:name :compare-lte :s "<=" :f '<= :c :infix :a 2 :e [:OperatorInfix :Logical]}
-   {:name :compare-neq :s "<>" :f 'not= :c :infix :a 2 :e [:OperatorInfix :Logical]}
+   {:name :binary-mult :s "*" :f 'functions/fn-multiply :c :infix :a 2 :e [:OperatorInfix :Math]}
+   {:name :binary-div :s "/" :f 'functions/fn-divide  :c :infix :a 2 :e [:OperatorInfix :Math]}
+   {:name :binary-plus :s "+" :f 'functions/fn-add :c :infix :a 2 :e [:OperatorInfix :Math]}
+   {:name :binary-minus :s "-" :f 'functions/fn-subtract :c :infix :a 2 :e [:OperatorInfix :Math]}
+   {:name :binary-exp :s "^" :f 'functions/fn-exponent :c :infix :a 2 :e [:OperatorInfix :Math]}
+   {:name :binary-concat :s "&" :f 'functions/fn-concat :c :infix :a 2 :e [:OperatorInfix :Concatenation]} ; what should this do? There are coercions to text in Excel
 
-   {:name :abs :s "abs" :f 'functions/abs :c :args :a 1 :e [:Function :Start]}
+   {:name :compare-eq :s "=" :f 'functions/fn-equal? :c :infix :a 2 :e [:OperatorInfix :Logical]}
+   {:name :compare-gt :s ">" :f 'functions/fn-gt? :c :infix :a 2 :e [:OperatorInfix :Logical]}
+   {:name :compare-lt :s "<" :f 'functions/fn-lt? :c :infix :a 2 :e [:OperatorInfix :Logical]}
+   {:name :compare-gte :s ">=" :f 'functions/fn-gt-equal? :c :infix :a 2 :e [:OperatorInfix :Logical]}
+   {:name :compare-lte :s "<=" :f 'functions/fn-lt-equal? :c :infix :a 2 :e [:OperatorInfix :Logical]}
+   {:name :compare-neq :s "<>" :f 'functions/fn-not-equal? :c :infix :a 2 :e [:OperatorInfix :Logical]}
+
+   {:name :index :s "index" :f 'functions/fn-index :c :args :a :all :e [:Function :Start]}
+
+   {:name :abs :s "abs" :f 'functions/fn-abs :c :args :a 1 :e [:Function :Start]}
    {:name :sin :s "sin" :f 'Math/sin :c :args :a 1 :e [:Function :Start]}
    {:name :true :s "true" :f 'functions/fn-true :c :args :a 0 :e [:Function :Start]}
    {:name :false :s "false" :f 'functions/fn-false :c :args :a 0 :e [:Function :Start]}
@@ -33,6 +37,13 @@
    {:name :max :s "max" :f 'functions/fn-max :c :args :a :all :e [:Function :Start]}
    {:name :min :s "min" :f 'functions/fn-min :c :args :a :all :e [:Function :Start]}
    {:name :pi :s "pi" :f 'functions/pi :c :args :a 0 :e [:Function :Start]}
+   {:name :ceiling :s "ceiling" :f 'functions/fn-ceiling :c :args :a 2 :e [:Function :Start]}
+   {:name :floor :s "floor" :f 'functions/fn-floor :c :args :a 2 :e [:Function :Start]}
+   {:name :round :s "round" :f 'functions/fn-round :c :args :a 2 :e [:Function :Start]}
+   {:name :roundup :s "roundup" :f 'functions/fn-roundup :c :args :a 2 :e [:Function :Start]}
+   {:name :rounddown :s "rounddown" :f 'functions/fn-rounddown :c :args :a 2 :e [:Function :Start]}
+   {:name :mod :s "mod" :f 'functions/fn-mod :c :args :a 2 :e [:Function :Start]}
+   {:name :sign :s "sign" :f 'functions/fn-sign :c :args :a 1 :e [:Function :Start]}
    {:name :sum :s "sum" :f 'functions/fn-sum :c :args :a :all :e [:Function :Start]}
    {:name :sumif :s "sumif" :f 'functions/fn-sumif :c :args :a :all :e [:Function :Start]}
    {:name :average :s "average" :f 'functions/fn-average :c :args :a :all :e [:Function :Start]}
@@ -46,10 +57,22 @@
    {:name :days :ext true :s "_xlfn.days" :f 'functions/fn-days :c :args :a :all :e [:Function :Start]}
    {:name :datevalue :s "datevalue" :f 'functions/fn-datevalue :c :args :a 1 :e [:Function :Start]}
    {:name :yearfrac :s "yearfrac" :f 'functions/fn-yearfrac :c :args :a :all :e [:Function :Start]}
-   {:name :index :s "index" :f 'functions/fn-index :c :args :a :all :e [:Function :Start]}
+   {:name :year :s "year" :f 'functions/fn-year :c :args :a 1 :e [:Function :Start]}
+   {:name :month :s "month" :f 'functions/fn-month :c :args :a 1 :e [:Function :Start]}
+   {:name :day :s "day" :f 'functions/fn-day :c :args :a 1 :e [:Function :Start]}
+   {:name :eomonth :s "eomonth" :f 'functions/fn-eomonth :c :args :a 2 :e [:Function :Start]}
+   {:name :edate :s "edate" :f 'functions/fn-edate :c :args :a 2 :e [:Function :Start]}
+
+   {:name :pmt :s "pmt" :f 'functions/fn-pmt :c :args :a :all :e [:Function :Start]}
+
+   {:name :match :s "match" :f 'functions/fn-match :c :args :a :all :e [:Function :Start]}
+   {:name :indirect :s "indirect" :f 'functions/fn-indirect :c :args :a :all :e [:Function :Start] :context-arg true}
+   {:name :offset :s "offset" :f 'functions/fn-offset :c :args :a :all :e [:Function :Start] :context-arg true}
    {:name :vlookup :s "vlookup" :f 'functions/fn-vlookup :c :args :a :all :e [:Function :Start]}
 
-   {:name :if :s "if" :f 'if :c :args :a 3 :e [:Function :Start]}])
+   {:name :if :s "if" :f 'if :c :args :a 3 :e [:Function :Start]}
+
+   {:name :binary-colon :s ":" :f 'functions/fn-range :c :infix :a 2 :e [:OperatorInfix :Math]}])
 
 (defn =ci [a1 a2]
   (= (some-> a1 str/lower-case)
@@ -78,15 +101,21 @@
         (if (sequential? v) v [v]))))))
 
 (defn get-operator-fn
-  ([operator-str type sub-type]
+  ([operator-str type sub-type sheet-name]
    (let [o-fn (some
                (fn [operator]
                  (when (and
                         (=ci operator-str (:s operator))
                         (= [type sub-type] (:e operator)))
-                   (:f operator)))
+                   operator))
                OPERATORS-PRECEDENCE)]
-     (if o-fn o-fn 'missing-fn))))
+     (if o-fn
+       (if (:context-arg o-fn)
+         ;; if the function takes the sheet as its first argument
+         ;; and the context as its second
+         (list 'partial (:f o-fn) sheet-name 'graph/*context*)
+         (:f o-fn))
+       'missing-fn))))
 
 (defn is-operator? [test-var]
   (when (map? test-var)
@@ -258,11 +287,11 @@
                                    {:sub-type :Number
                                     :type :Operand
                                     :value "2"}])
-  
-  (parse-simple-expression-tokens [{:sub-type :Text, :type :Operand, :value ">"} 
-                                   {:sub-type :Concatenation, :type :OperatorInfix, :value "&"} 
+
+  (parse-simple-expression-tokens [{:sub-type :Text, :type :Operand, :value ">"}
+                                   {:sub-type :Concatenation, :type :OperatorInfix, :value "&"}
                                    {:sub-type :Range, :type :Operand, :value "A1"}])
-  
+
   (is-operator? {:sub-type :Text, :type :Operand, :value ">"})
 
   (parse-expression-tokens [{:value "max"

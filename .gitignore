@@ -118,5 +118,6 @@ clojure.tmLanguage.json
 
 resources/~*
 resources/._*
+resources/private/
 ._*
 .vscode/settings.json

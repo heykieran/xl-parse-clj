@@ -103,8 +103,12 @@ which maps the excel formula symbol `"average"` to the clojure `functions/fn-ave
 
 The order of the definitions in the `OPERATORS-PRECEDENCE` vector also determines the precedence of the operators when being processed by the shunting-yard algorithm. Furthermore, the `:a` field in the definition lets the parser know how many arguments to expect.
 
-> As of this writing all Excel's mathematical and logical operators have been implemented, as well as the following functions `abs`, `sin`, `true`, `false`, `and`, `or`, `max`, `min`, `pi`, `now`, `date`, `days`, `datevalue`, `yearfrac`,
-  `sum`, `average`, `count`, `counta`, `sumif`, `averageif`, `countif`, `search`, `concatenate`, `vlookup` & `if`. Others will be added as time allows.
+> As of this writing all Excel's mathematical and logical operators have been implemented, as well as the following functions `abs`, `sin`, `true`, `false`, 
+ `and`, `or`, `not`, `max`, `min`, `pi`, `ceiling`, `floor`, `round`, `roundup`, 
+ `rounddown`, `mod`, `sign`, `now`, `date`, `days`, `datevalue`, `yearfrac`, 
+ `year`, `month`, `day`, `eomonth`, `edate`, `pmt`, `sum`, `average`, `count`,
+  `counta`, `sumif`, `averageif`, `countif`, `search`, `concatenate`, `index`,
+   `match`, `indirect`, `offset`, `vlookup` & `if`.  Others will be added as time allows.
   
 As an example 
 
@@ -121,7 +125,7 @@ As an example
 yields
 
 ```clojure
-(* (functions/fn-max 1.0 2.0) (eval-range "Sheet1!$A$4"))
+(functions/fn-multiply (functions/fn-max 1.0 2.0) (eval-range "Sheet1!$A$4"))
 ```
 
 ### Testing the formulas
@@ -157,14 +161,14 @@ With respect to item 1, as you've seen above, the formula
 is converted to to the Clojure form
 
 ```clojure
-(* (functions/fn-max 1.0 2.0) (eval-range "Sheet1!$A$4"))
+(functions/fn-multiply (functions/fn-max 1.0 2.0) (eval-range "Sheet1!$A$4"))
 ```
 
 so, in order to proceed further, we'll need to both parse the workbook, and provide an implementation for `eval-range` that's aware of the values in the workbook.
 
 We'll treat a workbook as a DAG, where the DAG's edges link cells to dependent cells, and also provide a way to resolve named ranges to the cells to which they refer.
 
-The `graph/explain-workbook` provides base-level functionality to parse a workbook, returning a map with `:named-ranges` and `:cells` keys which respectively provide information about the named ranges and the cells in the workbook. Each individual entry will also, in its `:references` value provide information about what other cells this cell references.
+The `graph/explain-workbook` provides base-level functionality to parse a workbook, returning for each sheet a map with `:named-ranges` and `:cells` keys which respectively provide information about the named ranges and the cells in that sheet in the workbook. Each individual sheet entry will also, in its `:references` value provide information about what other cells this cell references.
 
 For example, a cell `Sheet2!E6` might contain the formula `=SUM(B2:B4)-SUM(C2:C4)` which Excel evaluates to the value 528. 
 
@@ -268,14 +272,26 @@ Building on this is the actual `graph/eval-range` function
 which returns
 
 ```clojure
+#<Box@1b25c44: [12.0 24.0 36.0]>
+```
+
+which is a "boxed" vector of the values contained in the range. A boxed value is a container for a value and meta-data related to the value. We use this because in Clojure only objects that implement `IObj` can properly have meta data attached. However, this excludes many types of values for which it would be useful to retain meta data e.g. numbers, strings etc., which are basic, and important Excel values.
+
+To recover a value from a "box", we can simply `deref` it.
+
+```clojure
+@(graph/eval-range "Sheet2!H4:H6" WB-MAP)
+```
+
+returns 
+
+```clojure
 [12.0 24.0 36.0]
 ```
 
-which is a vector of the values contained in the range. 
+Notice that _even_ for ranges that describe a rectangular region (rather than a single row or a single column) `eval-range` returns a boxed vector.
 
-Notice that _even_ for ranges that describe a rectangular region (rather than a single row or a single column) `eval-range` returns a vector.
-
-However, `eval-range` also attaches meta-data to the vector returned, so that the _shape_ of the range can be recovered and used by functions that expect tabular data. 
+However, as noted above, `eval-range` also attaches meta-data to the boxed vector returned, so that the _shape_ of the range can be recovered and used by functions that expect tabular data. 
 
 For example
 
@@ -283,10 +299,10 @@ For example
 (graph/eval-range "Sheet2!$L$4:$N$6" WB-MAP)
 ```
 
-returns
+returns something like
 
 ```clojure
-["L1" 0.1 0.0 "L2" 0.2 30.0 "L3" 0.3 35.0]
+#<Box@2746cde: ["L1" 0.1 0.0 "L2" 0.2 30.0 "L3" 0.3 35.0]>
 ```
 
 and
@@ -298,13 +314,15 @@ and
 returns
 
 ```clojure
-{:single? false, :column? false, :sheet-name "Sheet2", 
- :tl-name "L4", :tl-coord [3 11], :cols 3, :rows 3}
+{:areas 
+  [{:single? false, :column? false, 
+    :sheet-name "Sheet2", :tl-name "L4", 
+    :tl-coord [3 11], :cols 3, :rows 3}]}
 ```
 
 which describes how the vector can be converted to a table.
 
-> The function `expand-cell-range` adds the meta-data that is recapitulated by `eval-range`
+> The function `expand-cell-range` adds the meta-data that is recapitulated by `eval-range` when the item is boxed.
 
 So, finally, the `graph` function will walk the DAG and recalculate, in the correct order, the entire workbook using the clojure code that was generated during initial processing.
 
@@ -319,33 +337,172 @@ will return a vector of tuples, where each tuple is the results of recalculating
 For example, using the demo workbook, we get
 
 ```clojure
-[["Sheet2!D6" true "YEARFRAC(PREPDATE,B6,3)" 0.9917808219178083 (functions/fn-yearfrac (eval-range "Sheet2!PREPDATE") (eval-range "Sheet2!B6") 3.0) 0.9917808219178083] 
-   ["Sheet2!H4" true "BONUS * G4" 12.0 (* (eval-range "Sheet2!BONUS") (eval-range "Sheet2!G4")) 12.0] 
-   ["Sheet2!J4" true "SUM(G4:I4)" 118.0 (functions/sum (eval-range "Sheet2!G4:I4")) 118.0] 
-   ["Sheet2!H6" true "BONUS * G6" 36.0 (* (eval-range "Sheet2!BONUS") (eval-range "Sheet2!G6")) 36.0] 
-   ["Sheet2!I7" true "SUM(I4:I6)" 15.0 (functions/sum (eval-range "Sheet2!I4:I6")) 15.0] 
-   ["Sheet2!B11" true "COUNTA(EMPLOYEES)" 3.0 (functions/fn-counta (eval-range "Sheet2!EMPLOYEES")) 3.0] 
-   ["Sheet2!H5" true "BONUS * G5" 24.0 (* (eval-range "Sheet2!BONUS") (eval-range "Sheet2!G5")) 24.0] 
-   ["Sheet2!H8" true "SUM(G4:G6)-SUM(H4:H6)" 528.0 (- (functions/sum (eval-range "Sheet2!G4:G6")) (functions/sum (eval-range "Sheet2!H4:H6"))) 528.0] 
-   ["Sheet2!H7" true "SUM(H4:H6)" 72.0 (functions/sum (eval-range "Sheet2!H4:H6")) 72.0] 
-   ["Sheet2!J5" true "SUM(G5:I5)" 229.0 (functions/sum (eval-range "Sheet2!G5:I5")) 229.0] 
-   ["Sheet2!G7" true "SUM(G4:G6)" 600.0 (functions/sum (eval-range "Sheet2!G4:G6")) 600.0] 
-   ["Sheet2!J6" true "SUM(G6:I6)" 340.0 (functions/sum (eval-range "Sheet2!G6:I6")) 340.0] 
-   ["Sheet2!B15" true "SUMIF(J4:J6,\">200\")" 569.0 (functions/fn-sumif (eval-range "Sheet2!J4:J6") (str ">200")) 569.0] 
-   ["Sheet2!J7" true "SUM(J4:J6)" 687.0 (functions/sum (eval-range "Sheet2!J4:J6")) 687.0] 
-   ["Sheet2!B14" true "IF(J7<ALLOWEDTOTAL,\"YES\",\"NO\")" "YES" (if (< (eval-range "Sheet2!J7") (eval-range "Sheet2!ALLOWEDTOTAL")) (str "YES") (str "NO")) "YES"] 
-   ["Sheet2!C6" true "_xlfn.DAYS(PREPDATE,B6)" 362.0 (functions/fn-days (eval-range "Sheet2!PREPDATE") (eval-range "Sheet2!B6")) 362.0] 
-   ["Sheet2!B17" true "SUMIF(E4:E6,B12,J4:J6)" 229.0 (functions/fn-sumif (eval-range "Sheet2!E4:E6") (eval-range "Sheet2!B12") (eval-range "Sheet2!J4:J6")) 229.0] 
-   ["Sheet2!D5" true "YEARFRAC(PREPDATE,B5,1)" 1.1600547195622435 (functions/fn-yearfrac (eval-range "Sheet2!PREPDATE") (eval-range "Sheet2!B5") 1.0) 1.1600547195622435] 
-   ["Sheet2!C5" true "_xlfn.DAYS(PREPDATE,B5)" 424.0 (functions/fn-days (eval-range "Sheet2!PREPDATE") (eval-range "Sheet2!B5")) 424.0] 
-   ["Sheet2!B16" true "SUMIF(J4:J6,\">\" & J4)" 569.0 (functions/fn-sumif (eval-range "Sheet2!J4:J6") (str (str ">") (eval-range "Sheet2!J4"))) 569.0] 
-   ["Sheet2!B18" true "SUMIF(E4:E6,\"L*\",J4:J6)" 687.0 (functions/fn-sumif (eval-range "Sheet2!E4:E6") (str "L*") (eval-range "Sheet2!J4:J6")) 687.0] 
-   ["Sheet2!F6" true "VLOOKUP(E6,$L$4:$N$6,2)" 0.3 (functions/fn-vlookup (eval-range "Sheet2!E6") (eval-range "Sheet2!$L$4:$N$6") 2.0) 0.3] 
-   ["Sheet2!F5" true "VLOOKUP(E5,$L$4:$N$6,2)" 0.1 (functions/fn-vlookup (eval-range "Sheet2!E5") (eval-range "Sheet2!$L$4:$N$6") 2.0) 0.1] 
-   ["Sheet2!F4" true "VLOOKUP(E4,$L$4:$N$6,2)" 0.2 (functions/fn-vlookup (eval-range "Sheet2!E4") (eval-range "Sheet2!$L$4:$N$6") 2.0) 0.2] 
-   ["Sheet2!D4" true "YEARFRAC(PREPDATE,B4)" 3.661111111111111 (functions/fn-yearfrac (eval-range "Sheet2!PREPDATE") (eval-range "Sheet2!B4")) 3.661111111111111] 
-   ["Sheet2!C4" true "_xlfn.DAYS(PREPDATE,B4)" 1336.0 (functions/fn-days (eval-range "Sheet2!PREPDATE") (eval-range "Sheet2!B4")) 1336.0]]
-   ```
+[["Sheet2!D6"
+  true
+  "YEARFRAC(PREPDATE,B6,3)"
+  0.9917808219178083
+  (functions/fn-yearfrac
+   (#'graph/eval-range "Sheet2!PREPDATE" graph/*context*)
+   (#'graph/eval-range "Sheet2!B6" graph/*context*)
+   3.0)
+  0.9917808219178083]
+ ["Sheet2!H4"
+  true
+  "BONUS * G4"
+  12.0
+  (functions/fn-multiply
+   (#'graph/eval-range "Sheet2!BONUS" graph/*context*)
+   (#'graph/eval-range "Sheet2!G4" graph/*context*))
+  12.0]
+ ["Sheet2!J4" true "SUM(G4:I4)" 118.0 (functions/fn-sum (#'graph/eval-range "Sheet2!G4:I4" graph/*context*)) 118.0]
+ ["Sheet2!H6"
+  true
+  "BONUS * G6"
+  36.0
+  (functions/fn-multiply
+   (#'graph/eval-range "Sheet2!BONUS" graph/*context*)
+   (#'graph/eval-range "Sheet2!G6" graph/*context*))
+  36.0]
+ ["Sheet2!I7" true "SUM(I4:I6)" 15.0 (functions/fn-sum (#'graph/eval-range "Sheet2!I4:I6" graph/*context*)) 15.0]
+ ["Sheet2!B11"
+  true
+  "COUNTA(EMPLOYEES)"
+  3.0
+  (functions/fn-counta (#'graph/eval-range "Sheet2!EMPLOYEES" graph/*context*))
+  3.0]
+ ["Sheet2!H5"
+  true
+  "BONUS * G5"
+  24.0
+  (functions/fn-multiply
+   (#'graph/eval-range "Sheet2!BONUS" graph/*context*)
+   (#'graph/eval-range "Sheet2!G5" graph/*context*))
+  24.0]
+ ["Sheet2!H8"
+  true
+  "SUM(G4:G6)-SUM(H4:H6)"
+  528.0
+  (functions/fn-subtract
+   (functions/fn-sum (#'graph/eval-range "Sheet2!G4:G6" graph/*context*))
+   (functions/fn-sum (#'graph/eval-range "Sheet2!H4:H6" graph/*context*)))
+  528.0]
+ ["Sheet2!H7" true "SUM(H4:H6)" 72.0 (functions/fn-sum (#'graph/eval-range "Sheet2!H4:H6" graph/*context*)) 72.0]
+ ["Sheet2!J5" true "SUM(G5:I5)" 229.0 (functions/fn-sum (#'graph/eval-range "Sheet2!G5:I5" graph/*context*)) 229.0]
+ ["Sheet2!G7" true "SUM(G4:G6)" 600.0 (functions/fn-sum (#'graph/eval-range "Sheet2!G4:G6" graph/*context*)) 600.0]
+ ["Sheet2!J6" true "SUM(G6:I6)" 340.0 (functions/fn-sum (#'graph/eval-range "Sheet2!G6:I6" graph/*context*)) 340.0]
+ ["Sheet2!B15"
+  true
+  "SUMIF(J4:J6,\">200\")"
+  569.0
+  (functions/fn-sumif (#'graph/eval-range "Sheet2!J4:J6" graph/*context*) (str ">200"))
+  569.0]
+ ["Sheet2!J7" true "SUM(J4:J6)" 687.0 (functions/fn-sum (#'graph/eval-range "Sheet2!J4:J6" graph/*context*)) 687.0]
+ ["Sheet2!B14"
+  true
+  "IF(J7<ALLOWEDTOTAL,\"YES\",\"NO\")"
+  "YES"
+  (if
+   (functions/fn-lt?
+    (#'graph/eval-range "Sheet2!J7" graph/*context*)
+    (#'graph/eval-range "Sheet2!ALLOWEDTOTAL" graph/*context*))
+   (str "YES")
+   (str "NO"))
+  "YES"]
+ ["Sheet2!C6"
+  true
+  "_xlfn.DAYS(PREPDATE,B6)"
+  362.0
+  (functions/fn-days
+   (#'graph/eval-range "Sheet2!PREPDATE" graph/*context*)
+   (#'graph/eval-range "Sheet2!B6" graph/*context*))
+  362]
+ ["Sheet2!B17"
+  true
+  "SUMIF(E4:E6,B12,J4:J6)"
+  229.0
+  (functions/fn-sumif
+   (#'graph/eval-range "Sheet2!E4:E6" graph/*context*)
+   (#'graph/eval-range "Sheet2!B12" graph/*context*)
+   (#'graph/eval-range "Sheet2!J4:J6" graph/*context*))
+  229.0]
+ ["Sheet2!D5"
+  true
+  "YEARFRAC(PREPDATE,B5,1)"
+  1.1600547195622435
+  (functions/fn-yearfrac
+   (#'graph/eval-range "Sheet2!PREPDATE" graph/*context*)
+   (#'graph/eval-range "Sheet2!B5" graph/*context*)
+   1.0)
+  1.1600547195622435]
+ ["Sheet2!C5"
+  true
+  "_xlfn.DAYS(PREPDATE,B5)"
+  424.0
+  (functions/fn-days
+   (#'graph/eval-range "Sheet2!PREPDATE" graph/*context*)
+   (#'graph/eval-range "Sheet2!B5" graph/*context*))
+  424]
+ ["Sheet2!B16"
+  true
+  "SUMIF(J4:J6,\">\" & J4)"
+  569.0
+  (functions/fn-sumif
+   (#'graph/eval-range "Sheet2!J4:J6" graph/*context*)
+   (functions/fn-concat (str ">") (#'graph/eval-range "Sheet2!J4" graph/*context*)))
+  569.0]
+ ["Sheet2!B18"
+  true
+  "SUMIF(E4:E6,\"L*\",J4:J6)"
+  687.0
+  (functions/fn-sumif
+   (#'graph/eval-range "Sheet2!E4:E6" graph/*context*)
+   (str "L*")
+   (#'graph/eval-range "Sheet2!J4:J6" graph/*context*))
+  687.0]
+ ["Sheet2!F6"
+  true
+  "VLOOKUP(E6,$L$4:$N$6,2)"
+  0.3
+  (functions/fn-vlookup
+   (#'graph/eval-range "Sheet2!E6" graph/*context*)
+   (#'graph/eval-range "Sheet2!$L$4:$N$6" graph/*context*)
+   2.0)
+  0.3]
+ ["Sheet2!F5"
+  true
+  "VLOOKUP(E5,$L$4:$N$6,2)"
+  0.1
+  (functions/fn-vlookup
+   (#'graph/eval-range "Sheet2!E5" graph/*context*)
+   (#'graph/eval-range "Sheet2!$L$4:$N$6" graph/*context*)
+   2.0)
+  0.1]
+ ["Sheet2!F4"
+  true
+  "VLOOKUP(E4,$L$4:$N$6,2)"
+  0.2
+  (functions/fn-vlookup
+   (#'graph/eval-range "Sheet2!E4" graph/*context*)
+   (#'graph/eval-range "Sheet2!$L$4:$N$6" graph/*context*)
+   2.0)
+  0.2]
+ ["Sheet2!D4"
+  true
+  "YEARFRAC(PREPDATE,B4)"
+  3.661111111111111
+  (functions/fn-yearfrac
+   (#'graph/eval-range "Sheet2!PREPDATE" graph/*context*)
+   (#'graph/eval-range "Sheet2!B4" graph/*context*))
+  3.661111111111111]
+ ["Sheet2!C4"
+  true
+  "_xlfn.DAYS(PREPDATE,B4)"
+  1336.0
+  (functions/fn-days
+   (#'graph/eval-range "Sheet2!PREPDATE" graph/*context*)
+   (#'graph/eval-range "Sheet2!B4" graph/*context*))
+  1336]]
+```
 
 If we want to check that the Clojure results match the results returned by Excel, we can run
 
