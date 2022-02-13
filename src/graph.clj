@@ -10,17 +10,28 @@
    [ast-processing :as ast]
    [shunting :as sh]
    [box :as box]
-   [clojure.walk :as walk])
+   [clojure.walk :as walk]
+   [taoensso.tufte :as tufte :refer (defnp p profiled profile)])
   (:import
    [org.apache.poi.ss SpreadsheetVersion]
    [org.apache.poi.ss.util AreaReference CellReference CellReference$NameType]
    [org.apache.poi.ss.usermodel CellType DateUtil Name SheetVisibility]
-   [org.apache.poi.xssf.usermodel XSSFName XSSFEvaluationWorkbook]
+   [org.apache.poi.xssf.usermodel XSSFName XSSFWorkbook XSSFEvaluationWorkbook]
    [org.apache.poi.ss.formula FormulaParser FormulaType]
    [org.apache.poi.ss.formula.ptg Ptg]
    [box Box]))
 
 (declare ^:dynamic *context*)
+
+(defn normalize-reference-str 
+  "Given a reference str normalize it so that the sheet name
+   is single quoted so that AreaReference doesn't blow up."
+  [refstr]
+  (->> refstr
+       (re-matches #"^(.*\!)?(.*?)$")
+       ((fn [[_ s c]]
+          (let [s-2 (when s (subs s 0 (-> s (count) (dec))))]
+            (str (when s-2 (str "'" (str/replace s-2 #"'(.*?)'" "$1") "'!")) c))))))
 
 (defn looks-like-valid-cell-reference?
   "Check if the refstr (2D reference) looks valid.
@@ -103,18 +114,19 @@
    wb-map))
 
 (defn get-named-range-description-map [named-ranges cell-name]
-  (when (and named-ranges #_(-> cell-name
-                              (AreaReference. SpreadsheetVersion/EXCEL2007)
-                              (.isSingleCell)))
-    (->> named-ranges
-         (reduce (fn [accum {:keys [name sheet index] :as named-range}]
-                   (if (= cell-name (str sheet "!" name))
-                     (assoc accum index named-range)
-                     accum))
-                 {})
-         (vals)
-         (sort-by :index >)
-         (first))))
+  (when named-ranges
+    (let [[_ sheet-with-exclam cell] (re-matches #"(.*!)?(.*)" cell-name)]
+      (->> named-ranges
+           (reduce (fn [accum {:keys [name sheet index] :as named-range}]
+                     (if (or
+                          (= cell name) 
+                          (= cell-name (str sheet "!" name)))
+                       (assoc accum index named-range)
+                       accum))
+                   {})
+           (vals)
+           (sort-by :index >)
+           (first)))))
 
 (defn expand-cell-range
   ([cell-range-str]
@@ -131,9 +143,12 @@
                               (get-named-ranges-from-wb-map)
                               (get-named-range-description-map cell-range-str))]
        (:references named-range)
-       (let [aref (AreaReference. cell-range-str SpreadsheetVersion/EXCEL2007)]
+       (let [normalized-cell-range-str (normalize-reference-str cell-range-str)
+             aref (AreaReference.
+                   normalized-cell-range-str
+                   SpreadsheetVersion/EXCEL2007)]
          (-> (mapv cell-info (.getAllReferencedCells aref))
-             (with-meta (graph/range-metadata cell-range-str))))))))
+             (with-meta (graph/range-metadata normalized-cell-range-str))))))))
 
 (defn explain-sheet-cells [sheet-name cells]
   (reduce
@@ -192,9 +207,9 @@
    a vector of information about the named ranges in the WB.
    :warnings is used to contain information about named ranges that we
    don't know how to handle yet."
-  [wb-as-resource]
+  [^XSSFWorkbook wb-as-resource]
   (let
-   [evaluation-wb (->> wb-as-resource (XSSFEvaluationWorkbook/create))
+   [^XSSFEvaluationWorkbook evaluation-wb (->> wb-as-resource (XSSFEvaluationWorkbook/create))
     ;; use reflection to get a reference to the getCTCName method, which
     ;; is private
     name-hidden-method (-> XSSFName
@@ -308,16 +323,16 @@
                          (explain-named-ranges-in-workbook)
                          (:named-ranges))]
     (->> wb-as-resource
-         (dk/select-sheet sheet-name)
-         dk/cell-seq
-         (explain-sheet-cells sheet-name)
-         (add-references sheet-name 
-                         {sheet-name {:named-ranges named-ranges}})
-         ((fn [r]
-            {:named-ranges (->> named-ranges
-                                (filterv #(or (= sheet-name (:sheet %))
-                                              (= -1 (:index %)))))
-             :cells r})))))
+      (dk/select-sheet sheet-name)
+      (dk/cell-seq)
+      (explain-sheet-cells sheet-name)
+      (add-references sheet-name
+                      {sheet-name {:named-ranges named-ranges}})
+      ((fn [r]
+         {:named-ranges (->> named-ranges
+                             (filterv #(or (= sheet-name (:sheet %))
+                                           (= -1 (:index %)))))
+          :cells r})))))
 
 (defn explain-workbook
   ([wb-name & [sheet-name]]
@@ -350,7 +365,7 @@
                                  cell-formula :formula cell-references :references
                                  :as cell-map}]
                        (if cell-references
-                         (concat
+                         (into
                           accum
                           (mapcat
                            (fn [{cr-type :type cr-sheet :sheet cr-label :label :as cell-reference}]
@@ -370,6 +385,19 @@
    wb-map
    wb-map))
 
+(defn create-cell-name-lookup 
+  "For a sheet map with cells entry create a map which assocs a
+   full cell name (i.e. '<sheet>!<label>') with an offset in 
+   the :cells vector pointing to the cell entry."
+  [wb-sheet-map-with-dependencies sheet-name]
+    (loop [cells (get-in wb-sheet-map-with-dependencies [sheet-name :cells]) idx 0 lookup {}]
+      (if-not (seq cells)
+        lookup
+        (let [{:keys [sheet label] :as cell} (first cells)]
+          (recur (rest cells)
+                 (inc idx)
+                 (assoc lookup (str sheet "!" label) idx))))))
+
 (defn get-cell-from-wb-map
   "Return the cell for a sheet and label, but without the :references key"
   ([cell-sheet cell-label wb-map-with-dependencies]
@@ -381,7 +409,8 @@
 
 (defn add-self-dependencies-for-sheet
   "Add cells with formulas, but with no dependencies to the
-   map as self-dependents"
+   map as being dependent on the single synthetic $$ROOT element
+   for its sheet."
   [wb-sheet-map-with-dependencies]
   (let [dependent-cells (:dependencies wb-sheet-map-with-dependencies)
         independent-cells (->> (:cells wb-sheet-map-with-dependencies)
@@ -395,7 +424,8 @@
        (if (some #(= % independent-cell) accum)
          accum
          ;; add the cell to the map as having a formula and
-         ;; depending on itself, so that we can force a recalc
+         ;; depending on a synthetic root element, so that we can force a recalc
+         ;; for a sheet by starting at that synthetic element.
          (conj accum [independent-cell {:sheet sheet :label "$$ROOT" :type :root}])))
      dependent-cells
      independent-cells)))
@@ -409,33 +439,71 @@
           wb-map-with-dependencies
           wb-map-with-dependencies))
 
-(defn consolidate-dependencies-across-sheets [wb-map-with-dependencies]
-  (mapcat (fn [[sheet-name {:keys [dependencies] :as wb-sheet-map}]]
-            dependencies)
-          wb-map-with-dependencies))
+(defn consolidate-dependencies-across-sheets
+  "Take all the dependencies defined per sheet and provide
+   a vector that contains dependencies for the entire 
+   workbook."
+  [wb-map-with-dependencies]
+  (reduce
+   (fn [accum [sheet-name {:keys [dependencies] :as wb-sheet-map}]]
+     (into accum dependencies))
+   []
+   wb-map-with-dependencies))
+
+(defn consolidate-dependencies
+  "Process the workbook's map and return a vector of 2-vectors
+   where each 2-vector contains a map describing a cell and a 
+   map describing a cell on which it depends. The first map entry
+   in the 2-vector is a complete cell description including 
+   :format, :value, :type, :references, :sheet, :column, 
+   :references, :label, :formula and :row keys, the second map
+   entry in the 2-vector is a shortened map containing only 
+   :sheet, :label, and :type keys. Note that a full cell description
+   map may occur more than once as the first value in the 2-vector
+   because it may depend on more than one cell, so it will be present
+   as many times as it has dependencies.
+   For 'unmoored' cells, i.e. those that do not depend on other
+   cells a synthetic dependency will be added to the $$ROOT node
+   for the sheet in which it's found."
+  [wb-map-with-dependencies include-all-formula-cells?]
+  (cond-> wb-map-with-dependencies
+    include-all-formula-cells?
+    (add-self-dependencies)
+    true
+    (consolidate-dependencies-across-sheets)))
+
+(defn create-graph-description 
+  [wb-map-with-dependencies include-all-formula-cells?]
+  ;; take the map describing the workbook and calculate a vector of
+  ;; dependency vectors, where each individual dependency vector contains two 
+  ;; entries, the first being a map fully describing a call and the 
+  ;; second is a shortened map describing one cell on which it depends.
+  ;; A cell may depend on more than one other cell, so there may be a
+  ;; number of dependency vectors with the same entry as its first 
+  ;; component.
+  (->> (consolidate-dependencies wb-map-with-dependencies include-all-formula-cells?)
+       ;; use the vector of dependency vectors to construct another vector describing
+       ;; the workbook's dependency graph by adding node and edge entries to 
+       ;; the new vector. nodes and edges are indicated by meta data.
+       (reduce (fn [graph-desc-vec [{cell-sheet :sheet cell-label :label cell-type :type :as cell}
+                                    {depends-sheet :sheet depends-label :label depends-type :type :as depends-on-cell}]]
+                 (let [node-1 (str cell-sheet "!" cell-label)
+                       node-2 (str depends-sheet "!" depends-label)
+                       node-1-map (get-cell-from-wb-map cell-sheet cell-label wb-map-with-dependencies)
+                       node-2-map (get-cell-from-wb-map depends-sheet depends-label wb-map-with-dependencies)]
+                   (-> graph-desc-vec 
+                       (conj [node-1 (or node-1-map {})])
+                       (conj [node-2 (or node-2-map {})])
+                       (conj ^:edge [node-2 node-1]))))
+               [])))
 
 (defn add-graph
   ([wb-map-with-dependencies]
    (add-graph wb-map-with-dependencies true))
   ([wb-map-with-dependencies include-all-formula-cells?]
-   (assoc wb-map-with-dependencies
-          :graph
-          (reduce (fn [accum [{cell-sheet :sheet cell-label :label :as cell}
-                              {depends-sheet :sheet depends-label :label :as depends-on-cell}]]
-                    (let [node-1 (str cell-sheet "!" cell-label)
-                          node-2 (str depends-sheet "!" depends-label)
-                          node-1-map (get-cell-from-wb-map cell-sheet cell-label wb-map-with-dependencies)
-                          node-2-map (get-cell-from-wb-map depends-sheet depends-label wb-map-with-dependencies)]
-                      (-> accum
-                          (uber/add-nodes-with-attrs [node-1 node-1-map])
-                          (uber/add-nodes-with-attrs [node-2 node-2-map])
-                          (uber/add-edges [node-2 node-1]))))
-                  (uber/digraph)
-                  (cond-> wb-map-with-dependencies
-                    include-all-formula-cells?
-                    (add-self-dependencies)
-                    true
-                    (consolidate-dependencies-across-sheets))))))
+   (let [graph-desc (create-graph-description wb-map-with-dependencies include-all-formula-cells?)]
+     (assoc wb-map-with-dependencies
+            :graph (apply uber/digraph graph-desc)))))
 
 (defn connect-disconnected-regions
   [{graph :graph :as wb-map-with-graph}]
