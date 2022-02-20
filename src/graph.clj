@@ -318,6 +318,18 @@
                  accum))
              {}))))
 
+(defn cell-comparator 
+  "A comparator using a combinations of a cell's sheet and
+   then its label."
+  [cell-1 cell-2]
+  (compare ((juxt :sheet :label) cell-1)
+           ((juxt :sheet :label) cell-2)))
+
+(defn sort-cells 
+  "Sort cells by sheet and label"
+  [cells]
+  (sort cell-comparator cells))
+
 (defn explain-cells-in-sheet [wb-as-resource sheet-name]
   (let [named-ranges (-> wb-as-resource
                          (explain-named-ranges-in-workbook)
@@ -332,7 +344,10 @@
          {:named-ranges (->> named-ranges
                              (filterv #(or (= sheet-name (:sheet %))
                                            (= -1 (:index %)))))
-          :cells r})))))
+          ;; sort the cells vector by sheet-name and label, important
+          ;; so we can use a binary search technique to find entries 
+          ;; in :cells quickly by sheet-name and label
+          :cells (-> r (sort-cells))})))))
 
 (defn explain-workbook
   ([wb-name & [sheet-name]]
@@ -399,13 +414,32 @@
                  (assoc lookup (str sheet "!" label) idx))))))
 
 (defn get-cell-from-wb-map
-  "Return the cell for a sheet and label, but without the :references key"
+  "Return the cell for a sheet and label, but without the :references key.
+   If cells are sorted by sheet name and label use binary search, otherwise
+   use linear search."
   ([cell-sheet cell-label wb-map-with-dependencies]
-   (->> (get-in wb-map-with-dependencies [cell-sheet :cells])
-        (some (fn [{:keys [sheet label] :as cell}]
-                (when (and (= sheet cell-sheet)
-                           (= label cell-label))
-                  (dissoc cell :references)))))))
+   (get-cell-from-wb-map cell-sheet cell-label false wb-map-with-dependencies))
+  ([cell-sheet cell-label sorted-cells? wb-map-with-dependencies]
+   (let [sheet-cells (get-in wb-map-with-dependencies [cell-sheet :cells])]
+     (if sorted-cells?
+       (let [offset (java.util.Collections/binarySearch
+                     sheet-cells
+                     {:sheet cell-sheet :label cell-label}
+                     cell-comparator)]
+         (when-not (neg? offset)
+           (try 
+             (nth sheet-cells offset)
+             (catch Exception e
+               (println "Bad Offset"
+                        (pr-str {:cell-sheet cell-sheet
+                                 :cell-label cell-label
+                                 :offset offset}))
+               (throw e)))))
+       (->> sheet-cells
+            (some (fn [{:keys [sheet label] :as cell}]
+                    (when (and (= sheet cell-sheet)
+                               (= label cell-label))
+                      (dissoc cell :references)))))))))
 
 (defn add-self-dependencies-for-sheet
   "Add cells with formulas, but with no dependencies to the
@@ -481,21 +515,24 @@
   ;; A cell may depend on more than one other cell, so there may be a
   ;; number of dependency vectors with the same entry as its first 
   ;; component.
-  (->> (consolidate-dependencies wb-map-with-dependencies include-all-formula-cells?)
-       ;; use the vector of dependency vectors to construct another vector describing
-       ;; the workbook's dependency graph by adding node and edge entries to 
-       ;; the new vector. nodes and edges are indicated by meta data.
-       (reduce (fn [graph-desc-vec [{cell-sheet :sheet cell-label :label cell-type :type :as cell}
-                                    {depends-sheet :sheet depends-label :label depends-type :type :as depends-on-cell}]]
-                 (let [node-1 (str cell-sheet "!" cell-label)
-                       node-2 (str depends-sheet "!" depends-label)
-                       node-1-map (get-cell-from-wb-map cell-sheet cell-label wb-map-with-dependencies)
-                       node-2-map (get-cell-from-wb-map depends-sheet depends-label wb-map-with-dependencies)]
-                   (-> graph-desc-vec 
-                       (conj [node-1 (or node-1-map {})])
-                       (conj [node-2 (or node-2-map {})])
-                       (conj ^:edge [node-2 node-1]))))
-               [])))
+  ;; The :cells entry for the cells in each sheet (a vector) should be sorted
+  ;; by sheet name and label
+  (let [sorted-cells? true]
+    (->> (consolidate-dependencies wb-map-with-dependencies include-all-formula-cells?)
+         ;; use the vector of dependency vectors to construct another vector describing
+         ;; the workbook's dependency graph by adding node and edge entries to 
+         ;; the new vector. nodes and edges are indicated by meta data.
+         (reduce (fn [graph-desc-vec [{cell-sheet :sheet cell-label :label cell-type :type :as cell}
+                                      {depends-sheet :sheet depends-label :label depends-type :type :as depends-on-cell}]]
+                   (let [node-1 (str cell-sheet "!" cell-label)
+                         node-2 (str depends-sheet "!" depends-label)
+                         node-1-map (get-cell-from-wb-map cell-sheet cell-label sorted-cells? wb-map-with-dependencies)
+                         node-2-map (get-cell-from-wb-map depends-sheet depends-label sorted-cells? wb-map-with-dependencies)]
+                     (-> graph-desc-vec
+                         (conj [node-1 (or node-1-map {})])
+                         (conj [node-2 (or node-2-map {})])
+                         (conj ^:edge [node-2 node-1]))))
+                 []))))
 
 (defn add-graph
   ([wb-map-with-dependencies]
@@ -506,6 +543,10 @@
             :graph (apply uber/digraph graph-desc)))))
 
 (defn connect-disconnected-regions
+  "Connect any cells that don't depend on other cells to the $$ROOT node
+   of the sheet and connect all sheet $$ROOT's to the $$ROOT node of 
+   the workbook. All sheet's :cell entries should be sorted by sheet-name
+   and label."
   [{graph :graph :as wb-map-with-graph}]
   (let
    [sheet-root-node-labels (keep (fn [sheet-name]
@@ -524,7 +565,8 @@
                           (uber/add-nodes-with-attrs
                            ["ROOT!$$ROOT"
                             {:label "$$ROOT" :sheet "ROOT" :type :root}]))
-                      sheet-root-node-labels)]
+                      sheet-root-node-labels)
+    sorted-cells? true]
     (->> (uber/nodes graph-with-roots)
          (reduce
           (fn [g n]
@@ -534,7 +576,7 @@
                        (or
                         (= 0 id)
                         (and (= 1 id) (uber/find-edge g n n))))
-                (let [node-with-map (get-cell-from-wb-map cell-sheet cell-label wb-map-with-graph)]
+                (let [node-with-map (get-cell-from-wb-map cell-sheet cell-label sorted-cells? wb-map-with-graph)]
                   (-> g
                       (uber/add-nodes-with-attrs [n node-with-map])
                       (uber/add-edges [(str cell-sheet "!$$ROOT") n])))
@@ -569,7 +611,7 @@
     (->> expanded-range
          (mapv (fn [{cell-sheet :sheet cell-label :label}]
                  (->> wb-map
-                      (get-cell-from-wb-map cell-sheet cell-label)
+                      (get-cell-from-wb-map cell-sheet cell-label true)
                       (:value))))
          ((fn [interim-result]
             (cond (or (nil? interim-result)
