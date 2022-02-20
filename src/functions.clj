@@ -12,6 +12,17 @@
    [org.apache.poi.ss.formula.functions Finance]
    [box Box]))
 
+(defn- unbox-value 
+  "If v is a boxed value unbox it else return v"
+  [v]
+  (if (instance? Box v) @v v))
+
+(defn- unbox-seq
+  "If v is a boxed seq of values unbox then else return v"
+  [v]
+  (let [v-value (unbox-value v)]
+    (map unbox-value v-value)))
+
 (defn fn-equal?
   "Replacement for `=` to handle cases where
    the value against which to compare `v1` (`v2`) is
@@ -22,74 +33,75 @@
    Currently, this is allowed, but it may not be 
    consistent with how Excel works."
   [v1 v2]
-  (let [v1-value (if (instance? Box v1) @v1 v1)
-        v2-value (if (instance? Box v2) @v2 v2)]
+  (let [v1-value (unbox-value v1)
+        v2-value (unbox-value v2)]
     (if (instance? java.util.regex.Pattern v2-value)
       (re-matches v2-value (str v1-value))
       (= v1-value v2-value))))
 
 (defn fn-unary-plus [v1]
-  (let [v1-value (if (instance? Box v1) @v1 v1)]
+  (let [v1-value (unbox-value v1)]
     (+ v1-value)))
 
 (defn fn-unary-minus [v1]
-  (let [v1-value (if (instance? Box v1) @v1 v1)]
+  (let [v1-value (unbox-value v1)]
     (- v1-value)))
 
 (defn fn-add [v1 v2]
-  (let [v1-value (if (instance? Box v1) @v1 v1)
-        v2-value (if (instance? Box v2) @v2 v2)]
+  (let [v1-value (unbox-value v1)
+        v2-value (unbox-value v2)]
     (+ v1-value v2-value)))
 
 (defn fn-subtract [v1 v2]
-  (let [v1-value (if (instance? Box v1) @v1 v1)
-        v2-value (if (instance? Box v2) @v2 v2)]
+  (let [v1-value (unbox-value v1)
+        v2-value (unbox-value v2)]
     (- v1-value v2-value)))
 
 (defn fn-multiply [v1 v2]
-  (let [v1-value (if (instance? Box v1) @v1 v1)
-        v2-value (if (instance? Box v2) @v2 v2)]
+  (let [v1-value (unbox-value v1)
+        v2-value (unbox-value v2)]
     (* v1-value v2-value)))
 
 (defn fn-divide [v1 v2]
-  (let [v1-value (if (instance? Box v1) @v1 v1)
-        v2-value (if (instance? Box v2) @v2 v2)]
+  (let [v1-value (unbox-value v1)
+        v2-value (unbox-value v2)]
     (/ v1-value v2-value)))
 
 (defn fn-exponent [v1 v2]
-  (let [v1-value (if (instance? Box v1) @v1 v1)
-        v2-value (if (instance? Box v2) @v2 v2)]
+  (let [v1-value (unbox-value v1)
+        v2-value (unbox-value v2)]
     (math/expt v1-value v2-value)))
 
 (defn fn-gt? [v1 v2]
-  (let [v1-value (if (instance? Box v1) @v1 v1)
-        v2-value (if (instance? Box v2) @v2 v2)]
+  (let [v1-value (unbox-value v1)
+        v2-value (unbox-value v2)]
     (> v1-value v2-value)))
 
 (defn fn-lt? [v1 v2]
-  (let [v1-value (if (instance? Box v1) @v1 v1)
-        v2-value (if (instance? Box v2) @v2 v2)]
+  (let [v1-value (unbox-value v1)
+        v2-value (unbox-value v2)]
     (< v1-value v2-value)))
 
 (defn fn-gt-equal? [v1 v2]
-  (let [v1-value (if (instance? Box v1) @v1 v1)
-        v2-value (if (instance? Box v2) @v2 v2)]
+  (let [v1-value (unbox-value v1)
+        v2-value (unbox-value v2)]
     (>= v1-value v2-value)))
 
 (defn fn-lt-equal? [v1 v2]
-  (let [v1-value (if (instance? Box v1) @v1 v1)
-        v2-value (if (instance? Box v2) @v2 v2)]
+  (let [v1-value (unbox-value v1)
+        v2-value (unbox-value v2)]
     (<= v1-value v2-value)))
 
 (defn fn-not-equal? [v1 v2]
-  (let [v1-value (if (instance? Box v1) @v1 v1)
-        v2-value (if (instance? Box v2) @v2 v2)]
+  (let [v1-value (unbox-value v1)
+        v2-value (unbox-value v2)]
     (not= v1-value v2-value)))
 
 (defn fn-abs [v]
-  (if (neg? v)
-    (- v)
-    v))
+  (let [v1-value (unbox-value v)]
+    (if (neg? v1-value)
+      (- v1-value)
+      v1-value)))
 
 (defn- v->boolean [v]
   (cond
@@ -189,7 +201,7 @@
       excel/VALUE-ERROR)))
 
 (defn fn-sum [& vs]
-  (let [values (flatten (map #(if (instance? Box %) (deref %) %) vs))]
+  (let [values (flatten (unbox-seq vs))]
     (apply + (filter number? values))))
 
 (defn- wrap-if [base-fn]
@@ -209,13 +221,13 @@
   ((wrap-if fn-sum) search-range criteria sum-range))
 
 (defn fn-max [& vs]
-  (apply max (flatten vs)))
+  (apply max (->> vs unbox-seq flatten (remove nil?))))
 
 (defn fn-min [& vs]
-  (apply min (flatten vs)))
+  (apply min (->> vs unbox-seq flatten (remove nil?))))
 
 (defn fn-count [& vs]
-  (let [values (flatten (map #(if (instance? Box %) (deref %) %) vs))]
+  (let [values (flatten (unbox-seq vs))]
     (->> values
          (keep #(when (number? %) %))
          (count))))
@@ -224,7 +236,7 @@
   ((wrap-if fn-count) search-range criteria sum-range))
 
 (defn fn-counta [& vs]
-  (let [values (flatten (map #(if (instance? Box %) (deref %) %) vs))]
+  (let [values (flatten (unbox-seq vs))]
     (-> (keep #(when (not (str/blank? (str %))) %) values)
         (count)
         (float))))
@@ -237,7 +249,7 @@
   ((wrap-if fn-average) search-range criteria sum-range))
 
 (defn fn-concatenate [& vs]
-  (let [values (flatten (map #(if (instance? Box %) (deref %) %) vs))]
+  (let [values (flatten (unbox-seq vs))]
     (apply str values)))
 
 (defn fn-now []
@@ -272,11 +284,11 @@
   (fn-subtract d1 d2))
 
 (defn fn-datevalue [v]
-  (excel/parse-excel-string-to-serial-date v))
+  (excel/parse-excel-string-to-serial-date (unbox-value v)))
 
 (defn fn-yearfrac [& [date-1 date-2 b]]
-  (let [date-1-value (if (instance? Box date-1) @date-1 date-1)
-        date-2-value (if (instance? Box date-2) @date-2 date-2)
+  (let [date-1-value (unbox-value date-1)
+        date-2-value (unbox-value date-2)
         d1 (if (number? date-1-value)
              date-1-value
              (excel/parse-excel-string-to-serial-date date-1-value))
