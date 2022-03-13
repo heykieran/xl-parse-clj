@@ -2,7 +2,8 @@
   (:require
    [clojure.walk :as walk]
    [shunting :as sh]
-   [xlparse :as parse]))
+   [xlparse :as parse]
+   [xl-utils :as xl-utils]))
 
 (defn process-function
   "Given a map element representing a function call element in the ast,
@@ -52,10 +53,12 @@
    (cond
      (= [:Operand :Number] [type sub-type])
      (Double/parseDouble value)
+     (= [:Operand :Logical] [type sub-type])
+     (Boolean/parseBoolean value)
      (= [:Operand :Text] [type sub-type])
      (list 'str value)
      (= [:Operand :Range] [type sub-type])
-     (list 'eval-range (if sheet-name (str sheet-name "!" value) value))
+     (list 'eval-range (xl-utils/get-complete-ref-str sheet-name value))
      (contains? #{:Function :OperatorInfix :OperatorPostfix :OperatorPrefix} type)
      (sh/get-operator-fn value type sub-type sheet-name)
      :else

@@ -7,6 +7,7 @@
    [clojure.math.numeric-tower :as math]
    [xlparse :as parse]
    [excel :as excel]
+   [xl-utils :as xl-utils]
    [ast-processing :as ast]
    [shunting :as sh]
    [box :as box]
@@ -32,6 +33,11 @@
        ((fn [[_ s c]]
           (let [s-2 (when s (subs s 0 (-> s (count) (dec))))]
             (str (when s-2 (str "'" (str/replace s-2 #"'(.*?)'" "$1") "'!")) c))))))
+
+(comment 
+  (normalize-reference-str "C1")
+  (normalize-reference-str "ASheet!C1")
+  (normalize-reference-str "A Sheet!C1"))
 
 (defn looks-like-valid-cell-reference?
   "Check if the refstr (2D reference) looks valid.
@@ -193,7 +199,9 @@
                         (keep (fn [{:keys [value type sub-type] :as token}]
                                 (when (and (= sub-type :Range)
                                            (= type :Operand))
-                                  (expand-cell-range (str sheet-name "!" value) named-ranges))))
+                                  (expand-cell-range 
+                                   (str sheet-name "!" value) 
+                                   named-ranges))))
                         (mapcat (fn [expanded-ranges]
                                   expanded-ranges))
                         (distinct)
@@ -421,6 +429,8 @@
    (get-cell-from-wb-map cell-sheet cell-label false wb-map-with-dependencies))
   ([cell-sheet cell-label sorted-cells? wb-map-with-dependencies]
    (let [sheet-cells (get-in wb-map-with-dependencies [cell-sheet :cells])]
+     (when-not (seq sheet-cells)
+       (println "WARNING: Sheet" cell-sheet "has no cells while looking for" cell-label))
      (if sorted-cells?
        (let [offset (java.util.Collections/binarySearch
                      sheet-cells
@@ -757,8 +767,12 @@
                                         (substitute-ranges)
                                         (substitute-dynamic-ranges)))
                        calculated-result (binding [*context* wb-map]
-                                           (-> final-code
-                                               (eval)))]
+                                           (try 
+                                             (-> final-code
+                                                 (eval))
+                                             (catch Exception e
+                                               (println "EVALUATION EXCEPTION")
+                                               (println final-code))))]
                    #_(tap> {:base-code formula-code
                             :indirected-code formula-code-with-indirection
                             :final-code final-code})
