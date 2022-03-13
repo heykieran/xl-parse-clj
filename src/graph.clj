@@ -200,7 +200,7 @@
                                 (when (and (= sub-type :Range)
                                            (= type :Operand))
                                   (expand-cell-range 
-                                   (str sheet-name "!" value) 
+                                   (xl-utils/get-complete-ref-str sheet-name value) 
                                    named-ranges))))
                         (mapcat (fn [expanded-ranges]
                                   expanded-ranges))
